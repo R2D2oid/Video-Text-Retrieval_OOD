@@ -26,17 +26,16 @@ with open(json_path,'r') as f:
 ts = content['sentences']
 vs = content['videos']
 
-item = {}
 vid_txt_pairs = []
-
 for txt,vid in zip(ts,vs):
+	item = {}
 	vid_file = vid['video_id']
 	cap_file = txt['caption_name']
 	beg_time = vid['start_time']
 	end_time = vid['end_time']
 
 	cap_path = '{}/{}'.format(corpus_path, cap_file)
-	vid_path = '{}/{}'.format(videos_path, vid_file)
+	# vid_path = '{}/{}'.format(videos_path, vid_file)
 
 	beg_ts = seconds_to_dt_time(beg_time)
 	end_ts = seconds_to_dt_time(end_time)
@@ -44,7 +43,7 @@ for txt,vid in zip(ts,vs):
 	beg_td = datetime.timedelta(hours=beg_ts.hour, minutes=beg_ts.minute, seconds=beg_ts.second)
 	end_td = datetime.timedelta(hours=end_ts.hour, minutes=end_ts.minute, seconds=end_ts.second)
 
-	m = datetime.timedelta(hours=0, minutes=0, seconds=5)
+	m = datetime.timedelta(hours=0, minutes=0, seconds=misalignment_param)
 
 	caps = utils.load_picklefile(cap_path)
 
@@ -73,11 +72,14 @@ for txt,vid in zip(ts,vs):
 			else:
 				sent_parts.append(v)
 		
-	item['video_id'] = vid['video_id']
-	item['start_time'] = vid['start_time']
-	item['end_time'] = vid['end_time']
+	item['video_id'] = vid_file
+	item['start_time'] = beg_time
+	item['end_time'] = end_time
 	item['sentences'] = entries
 
 	vid_txt_pairs.append(item)
 
-utils.dump_picklefile(vid_txt_pairs, path_='{}/Tempuckey/video_text.pkl'.format(home_dir))
+path_='{}/Tempuckey/video_text.pkl'.format(home_dir)
+utils.dump_picklefile(vid_txt_pairs, path_)
+
+print('generated {}'.format(path_))
