@@ -8,7 +8,7 @@ json_path = '{}/Tempuckey/Tempuckey_video_text_pair.json'.format(home_dir)
 corpus_path = '{}/NHL_ClosedCaption/corpus_with_timestamp'.format(home_dir)
 videos_path = '{}/Tempuckey/videos'.format(home_dir)
 
-misalignment_param = 5 # in seconds
+misalignment_param = 10 # in seconds
 
 def seconds_to_time(seconds): 
 	return time.strftime('%H:%M:%S.%M', time.gmtime(seconds))
@@ -26,7 +26,9 @@ with open(json_path,'r') as f:
 ts = content['sentences']
 vs = content['videos']
 
-dct = {}
+item = {}
+vid_txt_pairs = []
+
 for txt,vid in zip(ts,vs):
 	vid_file = vid['video_id']
 	cap_file = txt['caption_name']
@@ -55,24 +57,27 @@ for txt,vid in zip(ts,vs):
 		sent_beg_td = datetime.timedelta(hours=k[0].hour, minutes=k[0].minute, seconds=k[0].second)
 		sent_end_td = datetime.timedelta(hours=k[1].hour, minutes=k[1].minute, seconds=k[1].second)
 
-		if sent_beg_td>=beg_td-m and sent_end_td<=end_td+m:
-			if '.' not in v:
-				sent_parts.append(v)
-				if (len(sent_parts) == 1):
-					start_time = k[0]
-			else:
-				end_time = k[1]
+		if sent_beg_td > beg_td-m and sent_end_td < end_td+m:
+			if (len(sent_parts) == 0):
+					sent_beg_time = k[0]
+			if '.' in v:
+				sent_end_time = k[1]
 				sent_parts.append(v)
 				sentence = ' '.join(sent_parts)
-				sent_parts = []
-				entry = [start_time, end_time, sentence]
+				entry = [sent_beg_time, sent_end_time, sentence]
 				entries.append(entry)
 
+				sent_parts = []
+				sent_beg_time = None
+				sent_end_time = None
+			else:
+				sent_parts.append(v)
+		
+	item['video_id'] = vid['video_id']
+	item['start_time'] = vid['start_time']
+	item['end_time'] = vid['end_time']
+	item['sentences'] = entries
 
-	dct['video_id'] = vid['video_id']
-	dct['start_time'] = vid['start_time']
-	dct['end_time'] = vid['end_time']
-	dct['sentences'] = entries
+	vid_txt_pairs.append(item)
 
-utils.dump_picklefile(dct, path_='{}/Tempuckey/video_sentences.dct.pkl'.format(home_dir))
-
+utils.dump_picklefile(vid_txt_pairs, path_='{}/Tempuckey/video_text.pkl'.format(home_dir))
