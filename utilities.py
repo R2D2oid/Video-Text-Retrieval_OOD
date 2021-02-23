@@ -1,6 +1,9 @@
 import pickle as pkl
 from os import listdir, path, makedirs
+import subprocess
 import csv
+import time 
+import datetime
 
 def get_filenames(dir_):
 	return listdir(dir_)
@@ -83,3 +86,25 @@ def csv_to_dict(csv_):
 	for row in csv_:
 		dct[row[0]] = row[1:]
 	return dct
+
+def run_cmd(cmd):
+	process = subprocess.Popen(cmd, shell=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+	output, error = process.communicate()
+	return output,error
+  
+# def ffmpeg_cut(src, dest, start_time, duration_time):  
+	# cmd = 'ffmpeg -ss {} -i \"{}\" -c copy -t {} \"{}\"'.format(start_time, src, duration_time, dest)
+def ffmpeg_cut(src, dest, start_time, end_time):  
+	cmd = 'ffmpeg -i \"{}\" -ss {} -to {} -c copy  \"{}\"'.format(src, start_time, end_time, dest)
+	print(cmd)
+	return run_cmd(cmd)
+
+def seconds_to_time(seconds): 
+	return time.strftime('%H:%M:%S.%M', time.gmtime(seconds))
+      
+def seconds_to_dt_time(seconds):
+	tt = seconds_to_time(seconds)
+	hh,mm,ss = tt.split(':')
+	ss,_ = ss.split('.')
+
+	return datetime.time(hour=int(hh),minute=int(mm),second=int(ss))
