@@ -10,16 +10,6 @@ videos_path = '{}/Tempuckey/videos'.format(home_dir)
 
 misalignment_param = 10 # in seconds
 
-def seconds_to_time(seconds): 
-	return time.strftime('%H:%M:%S.%M', time.gmtime(seconds))
-      
-def seconds_to_dt_time(seconds):
-	tt = seconds_to_time(seconds)
-	hh,mm,ss = tt.split(':')
-	ss,_ = ss.split('.')
-
-	return datetime.time(hour=int(hh),minute=int(mm),second=int(ss))
-
 with open(json_path,'r') as f:
 	content = json.load(f)
 
@@ -37,8 +27,8 @@ for txt,vid in zip(ts,vs):
 	cap_path = '{}/{}'.format(corpus_path, cap_file)
 	# vid_path = '{}/{}'.format(videos_path, vid_file)
 
-	beg_ts = seconds_to_dt_time(beg_time)
-	end_ts = seconds_to_dt_time(end_time)
+	beg_ts = utils.seconds_to_dt_time(beg_time)
+	end_ts = utils.seconds_to_dt_time(end_time)
 
 	beg_td = datetime.timedelta(hours=beg_ts.hour, minutes=beg_ts.minute, seconds=beg_ts.second)
 	end_td = datetime.timedelta(hours=end_ts.hour, minutes=end_ts.minute, seconds=end_ts.second)
