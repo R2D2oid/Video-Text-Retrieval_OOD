@@ -1,6 +1,4 @@
 import utilities as utils
-import datetime
-import pdb
 
 def load_model(model_name = 'universal-sentence-encoder'):
 	if model_name == 'universal-sentence-encoder':
