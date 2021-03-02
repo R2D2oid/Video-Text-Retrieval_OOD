@@ -21,3 +21,7 @@
 
 #### train vtr model to learn a joint video-text subspace mapping function
 `Train_VTR_AE_with_Attention.ipynb`
+
+
+
+*note: some c3d video features are empty due to an issue with the feature extractor that relies on videos with a certain minimum length.
