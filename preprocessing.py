@@ -48,7 +48,6 @@ def load_video_text_features(v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T,
 
 def load_split_data(vids, caps, split_path):
     ids_ = utils.load_picklefile(split_path)
-    ids_ = ids_[:3]
     videos = []
     captions = []
     for id_ in ids_:
