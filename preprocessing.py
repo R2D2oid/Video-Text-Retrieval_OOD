@@ -29,11 +29,35 @@ def unify_embedding_length(emb, target_len):
     else:
         return emb
     
-def load_video_text_features(v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path):
+def load_video_text_features(v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, split_path):
     # load pre-computed video features and text features
     vids = utils.load_video_feats(v_feats_dir) 
     caps = utils.load_picklefile(t_feats_path)
     
+    # remove video ids with an invalid feature vector
+    vids, caps = remove_invalid_video_caption_features(vids, caps)
+        
+    # keep only the data from the provided split
+    vids, caps = load_split_data(vids, caps, split_path)
+
+    # preprocess video and text embeddings into proper format 
+    vids= preprocess_embeddings(vids, n_feats_v, T)
+    caps = preprocess_embeddings(caps, n_feats_t, L)
+    
+    return vids, caps
+
+def load_split_data(vids, caps, split_path):
+    ids_ = utils.load_picklefile(split_path)
+    ids_ = ids_[:3]
+    videos = []
+    captions = []
+    for id_ in ids_:
+        videos.append(vids[id_])
+        captions.append(caps[id_])
+        
+    return videos, captions
+
+def remove_invalid_video_caption_features(vids, caps):
     # remove video-captions that have an empty c3d features
     empty_ids = [k for k,v in vids.items() if len(v)==0]
     for e in empty_ids:
@@ -48,17 +72,5 @@ def load_video_text_features(v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T,
         del caps[k]
     
     assert len(vids)==len(caps), 'vids and caps should correspond!'
-        
-    ### create dataset based on training ids
-    train_ids_ = utils.load_picklefile(train_split_path)
     
-    videos = []
-    captions = []
-    for id_ in train_ids_:
-        videos.append(vids[id_])
-        captions.append(caps[id_])
-
-    videos = preprocess_embeddings(videos, n_feats_v, T)
-    captions = preprocess_embeddings(captions, n_feats_t, L)
-    
-    return videos, captions
+    return vids, caps
