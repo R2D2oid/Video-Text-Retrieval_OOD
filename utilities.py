@@ -1,4 +1,5 @@
 import pickle as pkl
+import numpy as np
 from os import listdir, path, makedirs
 import subprocess
 import csv
@@ -108,3 +109,13 @@ def seconds_to_dt_time(seconds):
 	ss,_ = ss.split('.')
 
 	return datetime.time(hour=int(hh),minute=int(mm),second=int(ss))
+
+def load_video_feats(vid_feat_dir):
+	fnames = get_filenames(vid_feat_dir)
+	vid_feats = {}
+	for fname in fnames:
+		id_ = fname[:-8]
+		with open(f'{vid_feat_dir}/{fname}','rb') as f:
+			vid_feat = np.load(f)
+			vid_feats[id_] = vid_feat
+	return vid_feats
