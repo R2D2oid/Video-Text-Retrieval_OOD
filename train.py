@@ -3,14 +3,24 @@ import torch
 import torch.nn as nn
 import numpy as np
 from bayes_opt import BayesianOptimization
-
+import logging
+from datetime import datetime as dt
 import utilities as utils
 from preprocessing import load_video_text_features
 from layers.AEwithAttention import AEwithAttention
 
-import pdb
+# init logging
+logfile = 'logs/logfile_{}.log'.format(dt.now().date())
+logformat = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
+loglevel = 10 ## levels: NOTSET = 0 | DEBUG = 10 | INFO = 20 | WARNING = 30 | ERROR = 40 | CRITICAL = 50
+logging.basicConfig (
+    filename = logfile.format (dt.now().date()),
+    level = loglevel,
+    format = logformat)
 
-
+logging.getLogger ().addHandler (logging.StreamHandler())
+logger = logging.getLogger()
+    
 def evaluate_model(lr, lr_step_size, weight_decay):
     # train model
     model_v, model_t = train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path, output_path)
@@ -135,7 +145,7 @@ def train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_fe
     ### create AE model for video and text encoding  
     model_v = AEwithAttention(n_feats_v, T, n_filt)
     model_t = AEwithAttention(n_feats_t, L, n_filt)
-
+    
     criterion = nn.MSELoss()
 
     # Adam optimizer
@@ -233,7 +243,7 @@ def train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_fe
             optimizer_G_v.step()
             optimizer_G_t.step()
 
-            print ('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, len(vids), loss.item()))
+            logger.info('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, len(vids), loss.item()))
 
             counter = counter + 1    
     
@@ -241,6 +251,9 @@ def train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_fe
     torch.save(model_v.state_dict(), f'{exp_dir}/model_v.sd')
     torch.save(model_t.state_dict(), f'{exp_dir}/model_t.sd')
     utils.dump_picklefile(losses, f'{exp_dir}/losses_training.pkl')
+    
+    logger.log(f'saved model_t, model_v, losses_training to {exp_dir}')
+    
     
     return model_v, model_t
 
@@ -267,6 +280,8 @@ if __name__ == '__main__':
       
     ### get args
     args = parser.parse_args()
+    
+    logger.info('\n\n**************************\n\nStarting a new run with bayes optimizer\n***************************')
     
     lr = args.lr
     lr_step_size = args.lr_step_size
