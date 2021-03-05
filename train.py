@@ -9,6 +9,8 @@ import utilities as utils
 from preprocessing import load_video_text_features
 from layers.AEwithAttention import AEwithAttention
 
+torch.set_default_tensor_type(torch.cuda.FloatTensor)
+
 # init logging
 logfile = 'logs/logfile_{}.log'.format(dt.now().date())
 logformat = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
@@ -145,6 +147,10 @@ def train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_fe
     ### create AE model for video and text encoding  
     model_v = AEwithAttention(n_feats_v, T, n_filt)
     model_t = AEwithAttention(n_feats_t, L, n_filt)
+
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    model_v.to(device)
+    model_t.to(device)
     
     criterion = nn.MSELoss()
 
@@ -252,7 +258,7 @@ def train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_fe
     torch.save(model_t.state_dict(), f'{exp_dir}/model_t.sd')
     utils.dump_picklefile(losses, f'{exp_dir}/losses_training.pkl')
     
-    logger.log(f'saved model_t, model_v, losses_training to {exp_dir}')
+    logger.info(f'saved model_t, model_v, losses_training to {exp_dir}')
     
     
     return model_v, model_t
