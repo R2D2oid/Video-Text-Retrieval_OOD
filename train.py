@@ -255,13 +255,15 @@ def train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_fe
             optimizer_G_v.step()
             optimizer_G_t.step()
 
-            logger.info('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, len(vids), loss.item()))
+            #logger.info('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, len(vids), loss.item()))
 
             counter = counter + 1    
         
         for k,v in losses.items():
             losses_avg[k].append(np.mean(np.array([l.item() for l in v])))
     
+        logger.info(f'Epoch[{epoch + 1}/{epoch}], Loss: {losses_avg["all"]}')
+        
     # save experiment configs and results
     torch.save(model_v.state_dict(), f'{exp_dir}/model_v_{exp_name}.sd')
     torch.save(model_t.state_dict(), f'{exp_dir}/model_t_{exp_name}.sd')
