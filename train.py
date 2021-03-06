@@ -25,19 +25,19 @@ logger = logging.getLogger()
     
 def evaluate_model(lr, lr_step_size, weight_decay):
     # train model
-    model_v, model_t, exp_dir = train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path, output_path)
+    model_v, model_t, exp_dir, exp_name = train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path, output_path)
     
     # calculate loss on validation set
     valid_split_path = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output/valid.split.pkl'
     vids, caps = load_video_text_features(v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, valid_split_path)
-    loss = evaluate_validation(model_v, model_t, vids, caps, exp_dir)
+    loss = evaluate_validation(model_v, model_t, vids, caps, exp_dir, exp_name)
     
     return loss
 
 
 ########################################
     
-def evaluate_validation(model_v, model_t, vids, caps, exp_dir):
+def evaluate_validation(model_v, model_t, vids, caps, exp_dir, exp_name):
     criterion = nn.MSELoss()
     
     losses = init_losses()
@@ -93,14 +93,19 @@ def evaluate_validation(model_v, model_t, vids, caps, exp_dir):
 
         losses['all'].append(loss)
     
-    utils.dump_picklefile(losses, f'{exp_dir}/losses_validation.pkl')
-
+    losses_avg = init_losses()
     try:
-        loss = np.array([losses['all'][i].item() for i in range(len(losses['all']))])
-        loss = np.mean(loss)
+        for k,v in losses.items():
+            losses_avg[k] = np.mean(np.array([l.item() for l in v]))
+        loss = losses_avg['all']
+        logger.info(f'{exp_name} validation loss: {loss}')
     except Exception as e:
-        #pdb.set_trace()
+        print('oops! did sth went wrong while casting tensor to numpy?')
         loss = 1000
+        
+    utils.dump_picklefile(losses_avg, f'{exp_dir}/losses_validation_avg_{exp_name}.pkl')
+    utils.dump_picklefile(losses, f'{exp_dir}/losses_validation_{exp_name}.pkl')
+
     return -loss
 
 
@@ -177,7 +182,8 @@ def train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_fe
     
     ### train the model
    
-    losses_by_epoch = {}
+    losses_avg = init_losses()
+    
     for epoch in range(n_epochs):
         counter = 1
         losses = init_losses()
@@ -254,17 +260,17 @@ def train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_fe
             counter = counter + 1    
         
         for k,v in losses.items():
-            losses_by_epoch[k] = np.mean(np.array([l.item() for l in v]))
+            losses_avg[k].append(np.mean(np.array([l.item() for l in v])))
     
     # save experiment configs and results
     torch.save(model_v.state_dict(), f'{exp_dir}/model_v_{exp_name}.sd')
     torch.save(model_t.state_dict(), f'{exp_dir}/model_t_{exp_name}.sd')
     utils.dump_picklefile(losses, f'{exp_dir}/losses_train_{exp_name}.pkl')
-    utils.dump_picklefile(losses_by_epoch, f'{exp_dir}/losses_train_by_epoch_{exp_name}.pkl')
+    utils.dump_picklefile(losses_avg, f'{exp_dir}/losses_train_avg_{exp_name}.pkl')
     
     logger.info(f'saved model_t, model_v, losses_training to {exp_dir}')
     
-    return model_v, model_t, exp_dir
+    return model_v, model_t, exp_dir, exp_name
 
 ########################################
 
@@ -280,6 +286,9 @@ if __name__ == '__main__':
     parser.add_argument('--num_feats', dest = 'num_feats', type = int, default = 512, help = 'number of feats in each vector')
     parser.add_argument('--t_feat_len', dest = 't_feat_len', type = int, default = 1, help = 'length of feat vector')
     parser.add_argument('--v_feat_len', dest = 'v_feat_len', type = int, default = 5, help = 'length of feat vector')
+    
+    parser.add_argument('--bayes_n_iter', dest = 'bayes_n_iter', type = int, default = 10, help = 'bayesian optimization num iterations')
+    parser.add_argument('--bayes_init_points', dest = 'bayes_init_points', type = int, default = 5, help = 'bayesian optimization init points')
     
     parser.add_argument('--video_feats_dir', dest = 'video_feats_dir', default = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output/sentence_segments_feats/video/c3d')
     parser.add_argument('--text_feats_path', dest = 'text_feats_path', default = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output/sentence_segments_feats/text/fasttext/sentence_feats.pkl')
@@ -307,6 +316,9 @@ if __name__ == '__main__':
     train_split_path = args.train_split_path
     output_path = args.output_path
     
+    bayes_init_points = args.bayes_init_points
+    bayes_n_iter = args.bayes_n_iter
+    
     # bounds of parameter space
     pbounds = {'lr': (0.000001, 0.01), 'lr_step_size': (1, 10), 'weight_decay':(0.001,0.1)}
 
@@ -317,8 +329,8 @@ if __name__ == '__main__':
     )
 
     optimizer.maximize(
-        init_points=4,
-        n_iter=10,
+        init_points=bayes_init_points,
+        n_iter=bayes_n_iter,
     )
     
 
