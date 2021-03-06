@@ -12,7 +12,7 @@ from layers.AEwithAttention import AEwithAttention
 torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
 # init logging
-logfile = 'logs/logfile_{}.log'.format(dt.now().date())
+logfile = 'logs/logfile_{}.log'.format(dt.now())
 logformat = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
 loglevel = 10 ## levels: NOTSET = 0 | DEBUG = 10 | INFO = 20 | WARNING = 30 | ERROR = 40 | CRITICAL = 50
 logging.basicConfig (
@@ -25,7 +25,7 @@ logger = logging.getLogger()
     
 def evaluate_model(lr, lr_step_size, weight_decay):
     # train model
-    model_v, model_t = train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path, output_path)
+    model_v, model_t, exp_dir = train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path, output_path)
     
     # calculate loss on validation set
     valid_split_path = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output/valid.split.pkl'
@@ -122,25 +122,25 @@ def log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_fi
     utils.create_dir_if_not_exist(exp_dir)
         
     exp_info_path = f'{exp_dir}/experiment_info.txt'
-    exp_info = [f'lr: {lr}\n',
-                f'lr_step_size: {lr_step_size}\n',
-                f'lr_gamma: {lr_gamma}\n',
-                f'lr_weight_decay: {weight_decay}\n',
-                f'n_epochs: {n_epochs}\n',
-                f'n_filt: {n_filt}\n',
-                f'n_feats_t: {n_feats_t}\n',
-                f'n_feats_v: {n_feats_t}\n',
-                f'T: {n_feats_t}\n',
-                f'L: {n_feats_t}\n']
+    exp_info = [f'lr: {lr}',
+                f'lr_step_size: {lr_step_size}',
+                f'lr_gamma: {lr_gamma}',
+                f'lr_weight_decay: {weight_decay}',
+                f'n_epochs: {n_epochs}',
+                f'n_filt: {n_filt}',
+                f'n_feats_t: {n_feats_t}',
+                f'n_feats_v: {n_feats_t}',
+                f'T: {n_feats_t}',
+                f'L: {n_feats_t}']
     utils.dump_textfile(exp_info, exp_info_path)
     
-    return exp_dir
+    return exp_dir, exp_name
 
 ########################################
 
 def train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path, output_path):   
         
-    exp_dir = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L)
+    exp_dir, exp_name = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L)
     
     vids, caps = load_video_text_features(v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path)
     
@@ -176,11 +176,11 @@ def train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_fe
 
     
     ### train the model
-    # training
-    losses = init_losses()
-    
+   
+    losses_by_epoch = {}
     for epoch in range(n_epochs):
         counter = 1
+        losses = init_losses()
         for v,t in zip(vids,caps):
             # Forward pass        
             v = torch.tensor(v).float()
@@ -252,16 +252,19 @@ def train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_fe
             logger.info('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, len(vids), loss.item()))
 
             counter = counter + 1    
+        
+        for k,v in losses.items():
+            losses_by_epoch[k] = np.mean(np.array([l.item() for l in v]))
     
     # save experiment configs and results
-    torch.save(model_v.state_dict(), f'{exp_dir}/model_v.sd')
-    torch.save(model_t.state_dict(), f'{exp_dir}/model_t.sd')
-    utils.dump_picklefile(losses, f'{exp_dir}/losses_training.pkl')
+    torch.save(model_v.state_dict(), f'{exp_dir}/model_v_{exp_name}.sd')
+    torch.save(model_t.state_dict(), f'{exp_dir}/model_t_{exp_name}.sd')
+    utils.dump_picklefile(losses, f'{exp_dir}/losses_train_{exp_name}.pkl')
+    utils.dump_picklefile(losses_by_epoch, f'{exp_dir}/losses_train_by_epoch_{exp_name}.pkl')
     
     logger.info(f'saved model_t, model_v, losses_training to {exp_dir}')
     
-    
-    return model_v, model_t
+    return model_v, model_t, exp_dir
 
 ########################################
 
