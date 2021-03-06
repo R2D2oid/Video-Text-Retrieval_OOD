@@ -1,11 +1,17 @@
 import torch 
 import numpy as np
 import utilities as utils
+from dim_reduction import pca_dim_reduction
 
 def preprocess_embeddings(embeddings, num_feats, T):
     target_len = T * num_feats
     processed_embeddings = []
     count = 0
+    dims = embeddings[0].shape
+    if num_feats < dims[0]:
+        print(f'reducing dims from {dims[0]} to {num_feats}')
+        embeddings = pca_dim_reduction(embeddings, pca_dims = num_feats)
+        
     for emb in embeddings:
         emb = emb.reshape(-1)
         processed_emb = unify_embedding_length(emb, target_len)
