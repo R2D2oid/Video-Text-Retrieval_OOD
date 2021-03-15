@@ -1,4 +1,5 @@
 import argparse
+import math
 import torch 
 import torch.nn as nn
 import numpy as np
@@ -24,20 +25,50 @@ logging.getLogger ().addHandler (logging.StreamHandler())
 logger = logging.getLogger()
     
 def evaluate_model(lr, lr_step_size, weight_decay):
-    # train model
-    model_v, model_t, exp_dir, exp_name = train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path, output_path)
+
+    # load train data
+    vids, caps = load_video_text_features(v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path)
     
-    # calculate loss on validation set
+    # train model
+    model_v, model_t, train_losses, train_losses_avg = train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L)
+    
+    # load valid data
     valid_split_path = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output/valid.split.pkl'
     vids, caps = load_video_text_features(v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, valid_split_path)
-    loss = evaluate_validation(model_v, model_t, vids, caps, exp_dir, exp_name)
     
-    return loss
+    # calculate loss on validationn
+    valid_loss, valid_losses, valid_losses_avg = evaluate_validation(model_v, model_t, vids, caps)
+    
+    # log experiment meta data 
+    exp_dir, exp_name = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L)
+    
+    # save trained model, training losses, and validation losses
+    save_experiment(model_v, model_t, train_losses, train_losses_avg, valid_losses, valid_losses_avg, exp_dir, exp_name)
+    logger.info(f'saved model_t, model_v, training/validation loss to {exp_dir}')
 
+    # validation loss returned for bayesian parameter optimization 
+    return valid_loss
+
+########################################
+
+def save_experiment(model_v, model_t, train_losses, train_losses_avg, valid_losses, valid_losses_avg, exp_dir, exp_name):
+    # save models
+    torch.save(model_v.state_dict(), f'{exp_dir}/model_v_{exp_name}.sd')
+    torch.save(model_t.state_dict(), f'{exp_dir}/model_t_{exp_name}.sd')
+    
+    # save train losses
+    utils.dump_picklefile(train_losses, f'{exp_dir}/losses_train_{exp_name}.pkl')
+    utils.dump_picklefile(train_losses_avg, f'{exp_dir}/losses_train_avg_{exp_name}.pkl')
+    
+    # save valid losses
+    utils.dump_picklefile(valid_losses_avg, f'{exp_dir}/losses_validation_avg_{exp_name}.pkl')
+    utils.dump_picklefile(valid_losses, f'{exp_dir}/losses_validation_{exp_name}.pkl')
+    
+    return True
 
 ########################################
     
-def evaluate_validation(model_v, model_t, vids, caps, exp_dir, exp_name):
+def evaluate_validation(model_v, model_t, vids, caps):
     criterion = nn.MSELoss()
     
     losses = init_losses()
@@ -103,10 +134,10 @@ def evaluate_validation(model_v, model_t, vids, caps, exp_dir, exp_name):
         print('oops! did sth went wrong while casting tensor to numpy?')
         loss = 1000
         
-    utils.dump_picklefile(losses_avg, f'{exp_dir}/losses_validation_avg_{exp_name}.pkl')
-    utils.dump_picklefile(losses, f'{exp_dir}/losses_validation_{exp_name}.pkl')
-
-    return -loss
+    if loss is math.nan:
+        loss = 1000
+        
+    return -loss, losses, losses_avg
 
 
 ########################################
@@ -116,7 +147,6 @@ def init_losses():
     loss_types = ['recons1', 'recons2', 'joint', 'cross1', 'cross2', 'cycle1', 'cycle2', 'all']
     for t in loss_types: losses[t] = []
     return losses
-
 
 ########################################
 
@@ -143,12 +173,8 @@ def log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_fi
 
 ########################################
 
-def train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path, output_path):   
-        
-    exp_dir, exp_name = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L)
-    
-    vids, caps = load_video_text_features(v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path)
-    
+def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L):   
+          
     ### create AE model for video and text encoding  
     model_v = AEwithAttention(n_feats_v, T, n_filt)
     model_t = AEwithAttention(n_feats_t, L, n_filt)
@@ -255,24 +281,16 @@ def train_model(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, v_fe
             optimizer_G_v.step()
             optimizer_G_t.step()
 
-            #logger.info('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, len(vids), loss.item()))
+            logger.info('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, len(vids), loss.item()))
 
             counter = counter + 1    
         
         for k,v in losses.items():
             losses_avg[k].append(np.mean(np.array([l.item() for l in v])))
     
-        logger.info(f'Epoch[{epoch + 1}/{epoch}], Loss: {losses_avg["all"]}')
+        logger.info(f'Epoch[{epoch + 1}/{n_epochs}], Loss: {losses_avg["all"][-1]}')
         
-    # save experiment configs and results
-    torch.save(model_v.state_dict(), f'{exp_dir}/model_v_{exp_name}.sd')
-    torch.save(model_t.state_dict(), f'{exp_dir}/model_t_{exp_name}.sd')
-    utils.dump_picklefile(losses, f'{exp_dir}/losses_train_{exp_name}.pkl')
-    utils.dump_picklefile(losses_avg, f'{exp_dir}/losses_train_avg_{exp_name}.pkl')
-    
-    logger.info(f'saved model_t, model_v, losses_training to {exp_dir}')
-    
-    return model_v, model_t, exp_dir, exp_name
+    return model_v, model_t, losses, losses_avg
 
 ########################################
 
