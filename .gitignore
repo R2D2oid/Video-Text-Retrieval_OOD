@@ -1,3 +1,6 @@
 env_vtr/*
 *.log
-__pycache__/*
+*__pycache__*
+output/experiments
+.ipynb_checkpoints/
+output/sentence_segments/
