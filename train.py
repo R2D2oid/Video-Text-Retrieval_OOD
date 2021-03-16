@@ -3,6 +3,7 @@ import math
 import torch 
 import torch.nn as nn
 import numpy as np
+import pandas as pd
 from bayes_opt import BayesianOptimization
 import logging
 from datetime import datetime as dt
@@ -27,7 +28,7 @@ logger = logging.getLogger()
 def evaluate_model(lr, lr_step_size, weight_decay):
 
     # load train data
-    vids, caps = load_video_text_features(v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path)
+    vids, caps = load_video_text_features(v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path, n_max=None)
     
     # train model
     model_v, model_t, train_losses, train_losses_avg = train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L)
@@ -68,85 +69,67 @@ def save_experiment(model_v, model_t, train_losses, train_losses_avg, valid_loss
 
 ########################################
     
+def forward_multimodal(model_v, model_t, criterion, v, t, coefs = (1, 1, 1, 1)):
+    # model_v and model_t are the corresponding models for video and captions respectively
+
+    v = torch.tensor(v).float()
+    t = torch.tensor(t).float()
+
+    dims_v = v.shape
+    dims_t = t.shape
+
+    # recons loss
+    v_reconst = model_v(v).reshape(dims_v[0], dims_v[1])
+    t_reconst = model_t(t).reshape(dims_t[0], dims_t[1])
+    loss_recons_v = criterion(v_reconst, v)
+    loss_recons_t = criterion(t_reconst, t)
+
+    # joint loss
+    loss_joint = criterion(model_v.encoder(v), model_t.encoder(t))
+
+    # cross loss
+    loss_cross_t = criterion(model_t.decoder(model_v.encoder(v)).reshape(dims_t[0], dims_t[1]), t)
+    loss_cross_v = criterion(model_v.decoder(model_t.encoder(t)).reshape(dims_v[0], dims_v[1]), v)
+    
+    # cycle loss
+    loss_cycle_t = criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))).reshape(dims_t[0], dims_t[1]), t)
+    loss_cycle_v = criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))).reshape(dims_v[0], dims_v[1]), v)
+
+    # set coef hyperparams 
+    a0, a1, a2, a3 = coefs
+    
+    # total loss
+    loss_total = a0 * (loss_recons_t + loss_recons_v) + (a1 * loss_joint) + a2 * (loss_cross_t + loss_cross_v) + a3 * (loss_cycle_t + loss_cycle_v)
+
+    return (loss_recons_t, loss_recons_v, loss_joint, loss_cross_t, loss_cross_v, loss_cycle_t, loss_cycle_v, loss_total)
+
+################################
+
+def average_loss(losses):
+    losses = pd.DataFrame(losses[1:], columns = losses[0])
+    return losses.mean()
+
+################################
+
 def evaluate_validation(model_v, model_t, vids, caps):
+    
+    losses = [['recons_t', 'recons_v', 'joint', 'cross_t', 'cross_v', 'cycle_t', 'cycle_v', 'total']]
     criterion = nn.MSELoss()
-    
-    losses = init_losses()
-    
+
     for v,t in zip(vids,caps):
-        # Forward pass        
-        v = torch.tensor(v).float()
-        t = torch.tensor(t).float()
+        loss = forward_multimodal(model_v, model_t, criterion, v, t)
+        losses.append([l.item() for l in loss])
 
-        # Compute recons loss 
-        dims_v = v.shape
-        dims_t = t.shape
-
-        v_reconst = model_v(v).reshape(dims_v[0], dims_v[1])
-        t_reconst = model_t(t).reshape(dims_t[0], dims_t[1])
-
-        loss_recons_v = criterion(v_reconst, v)
-        loss_recons_t = criterion(t_reconst, t)
-
-        losses['recons1'].append(loss_recons_v)
-        losses['recons2'].append(loss_recons_t)
-
-        loss_recons = loss_recons_v + loss_recons_t
-        # the following losses require paired video/caption data (v and t)
-        # model_v and model_t are the corresponding models for video and captions respectively
-
-        # Compute joint loss
-        loss_joint = criterion(model_v.encoder(v), model_t.encoder(t))
-
-        losses['joint'].append(loss_joint)
-
-        # Compute cross loss
-        loss_cross1 = criterion(model_t.decoder(model_v.encoder(v)).reshape(dims_t[0], dims_t[1]), t)
-        loss_cross2 = criterion(model_v.decoder(model_t.encoder(t)).reshape(dims_v[0], dims_v[1]), v)
-        loss_cross = loss_cross1 + loss_cross2
-
-        losses['cross1'].append(loss_cross1)
-        losses['cross2'].append(loss_cross2)
-
-        # Compute cycle loss
-        loss_cycle1 = criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))).reshape(dims_t[0], dims_t[1]), t)
-        loss_cycle2 = criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))).reshape(dims_v[0], dims_v[1]), v)
-        loss_cycle = loss_cycle1 + loss_cycle2
-
-        losses['cycle1'].append(loss_cycle1)
-        losses['cycle2'].append(loss_cycle2)
-
-        # set hyperparams 
-        a1, a2, a3 = 1, 1, 1
-
-        # Compute total loss
-        loss = loss_recons + a1 * loss_joint + a2 * loss_cross + a3 * loss_cycle
-
-        losses['all'].append(loss)
+    losses_avg = average_loss(losses)
+    loss = losses_avg['total']
     
-    losses_avg = init_losses()
-    try:
-        for k,v in losses.items():
-            losses_avg[k] = np.mean(np.array([l.item() for l in v]))
-        loss = losses_avg['all']
-        logger.info(f'{exp_name} validation loss: {loss}')
-    except Exception as e:
-        print('oops! did sth went wrong while casting tensor to numpy?')
-        loss = 1000
+    logger.info(f'validation loss: {loss}')
         
     if loss is math.nan:
+        print('oops! nan again!')
         loss = 1000
         
     return -loss, losses, losses_avg
-
-
-########################################
-
-def init_losses():
-    losses = {}
-    loss_types = ['recons1', 'recons2', 'joint', 'cross1', 'cross2', 'cycle1', 'cycle2', 'all']
-    for t in loss_types: losses[t] = []
-    return losses
 
 ########################################
 
@@ -165,8 +148,8 @@ def log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_fi
                 f'n_filt: {n_filt}',
                 f'n_feats_t: {n_feats_t}',
                 f'n_feats_v: {n_feats_t}',
-                f'T: {n_feats_t}',
-                f'L: {n_feats_t}']
+                f'T: {T}',
+                f'L: {L}']
     utils.dump_textfile(exp_info, exp_info_path)
     
     return exp_dir, exp_name
@@ -174,7 +157,7 @@ def log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_fi
 ########################################
 
 def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L):   
-          
+             
     ### create AE model for video and text encoding  
     model_v = AEwithAttention(n_feats_v, T, n_filt)
     model_t = AEwithAttention(n_feats_t, L, n_filt)
@@ -183,8 +166,6 @@ def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
     model_v.to(device)
     model_t.to(device)
     
-    criterion = nn.MSELoss()
-
     # Adam optimizer
     optimizer_v = torch.optim.Adam(model_v.parameters(), lr = lr, weight_decay = weight_decay)
     optimizer_t = torch.optim.Adam(model_t.parameters(), lr = lr, weight_decay = weight_decay)
@@ -205,64 +186,16 @@ def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
     torch.optim.lr_scheduler.StepLR(optimizer_G_v, step_size = lr_step_size, gamma = lr_gamma)
     torch.optim.lr_scheduler.StepLR(optimizer_G_t, step_size = lr_step_size, gamma = lr_gamma)
 
-    
+    criterion = nn.MSELoss()
+
+    losses_avg = []
     ### train the model
-   
-    losses_avg = init_losses()
-    
     for epoch in range(n_epochs):
         counter = 1
-        losses = init_losses()
+        losses = [['recons_t', 'recons_v', 'joint', 'cross_t', 'cross_v', 'cycle_t', 'cycle_v', 'total']]
         for v,t in zip(vids,caps):
-            # Forward pass        
-            v = torch.tensor(v).float()
-            t = torch.tensor(t).float()
-
-            # Compute recons loss 
-            dims_v = v.shape
-            dims_t = t.shape
-
-            v_reconst = model_v(v).reshape(dims_v[0], dims_v[1])
-            t_reconst = model_t(t).reshape(dims_t[0], dims_t[1])
-
-            loss_recons_v = criterion(v_reconst, v)
-            loss_recons_t = criterion(t_reconst, t)
-
-            losses['recons1'].append(loss_recons_v)
-            losses['recons2'].append(loss_recons_t)
-            
-            loss_recons = loss_recons_v + loss_recons_t
-            # the following losses require paired video/caption data (v and t)
-            # model_v and model_t are the corresponding models for video and captions respectively
-
-            # Compute joint loss
-            loss_joint = criterion(model_v.encoder(v), model_t.encoder(t))
-            
-            losses['joint'].append(loss_joint)
-
-            # Compute cross loss
-            loss_cross1 = criterion(model_t.decoder(model_v.encoder(v)).reshape(dims_t[0], dims_t[1]), t)
-            loss_cross2 = criterion(model_v.decoder(model_t.encoder(t)).reshape(dims_v[0], dims_v[1]), v)
-            loss_cross = loss_cross1 + loss_cross2
-
-            losses['cross1'].append(loss_cross1)
-            losses['cross2'].append(loss_cross2)
-
-            # Compute cycle loss
-            loss_cycle1 = criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))).reshape(dims_t[0], dims_t[1]), t)
-            loss_cycle2 = criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))).reshape(dims_v[0], dims_v[1]), v)
-            loss_cycle = loss_cycle1 + loss_cycle2
-
-            losses['cycle1'].append(loss_cycle1)
-            losses['cycle2'].append(loss_cycle2)
-                
-            # set hyperparams 
-            a1, a2, a3 = 1, 1, 1
-
-            # Compute total loss
-            loss = loss_recons + a1 * loss_joint + a2 * loss_cross + a3 * loss_cycle
-
-            losses['all'].append(loss)
+            loss = forward_multimodal(model_v, model_t, criterion, v, t)
+            losses.append([l.item() for l in loss])
 
             # Backprop and optimize
             optimizer_v.zero_grad()
@@ -272,7 +205,7 @@ def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
             optimizer_G_v.zero_grad()
             optimizer_G_t.zero_grad()
 
-            loss.backward()
+            loss[-1].backward()
 
             optimizer_v.step()
             optimizer_t.step()
@@ -281,14 +214,11 @@ def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
             optimizer_G_v.step()
             optimizer_G_t.step()
 
-            logger.info('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, len(vids), loss.item()))
+            logger.info('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, len(vids), loss[-1].item()))
 
-            counter = counter + 1    
-        
-        for k,v in losses.items():
-            losses_avg[k].append(np.mean(np.array([l.item() for l in v])))
-    
-        logger.info(f'Epoch[{epoch + 1}/{n_epochs}], Loss: {losses_avg["all"][-1]}')
+        counter = counter + 1 
+        losses_avg.append(average_loss(losses)) 
+        logger.info(f'Epoch[{epoch + 1}/{n_epochs}], Loss: {losses_avg[-1]}')
         
     return model_v, model_t, losses, losses_avg
 
@@ -353,5 +283,3 @@ if __name__ == '__main__':
         n_iter=bayes_n_iter,
     )
     
-
-
