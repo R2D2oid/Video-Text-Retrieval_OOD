@@ -127,35 +127,35 @@ def forward_multimodal(model_v, model_t, criterion, v, t, coefs=None, active_los
     loss_recons_v = 0
     if reconst_v_active:
         v_reconst = model_v(v).reshape(dims_v[0], dims_v[1])
-        loss_recons_v = criterion(v_reconst, v) if target is None else criterion(v_reconst, v, target)
+        loss_recons_v = criterion(v_reconst, v) if loss_criterion=='mse' else criterion(v_reconst, v, target)
         
     loss_recons_t = 0
     if reconst_t_active:
         t_reconst = model_t(t).reshape(dims_t[0], dims_t[1])
-        loss_recons_t = criterion(t_reconst, t) if target is None else criterion(t_reconst, t, target)
+        loss_recons_t = criterion(t_reconst, t) if loss_criterion=='mse' else criterion(t_reconst, t, target)
 
     # joint loss
     loss_joint = 0
     if joint_active:
-        loss_joint = criterion(model_v.encoder(v), model_t.encoder(t)) if target is None else criterion(model_v.encoder(v), model_t.encoder(t), target)
+        loss_joint = criterion(model_v.encoder(v), model_t.encoder(t)) if loss_criterion=='mse' else criterion(model_v.encoder(v), model_t.encoder(t), target)
 
     # cross loss
     loss_cross_t = 0
     if cross_t_active:
-        loss_cross_t = criterion(model_t.decoder(model_v.encoder(v)).reshape(dims_t[0], dims_t[1]), t) if target is None else criterion(model_t.decoder(model_v.encoder(v)).reshape(dims_t[0], dims_t[1]), t, target)
+        loss_cross_t = criterion(model_t.decoder(model_v.encoder(v)).reshape(dims_t[0], dims_t[1]), t) if loss_criterion=='mse' else criterion(model_t.decoder(model_v.encoder(v)).reshape(dims_t[0], dims_t[1]), t, target)
         
     loss_cross_v = 0
     if cross_v_active:
-        loss_cross_v = criterion(model_v.decoder(model_t.encoder(t)).reshape(dims_v[0], dims_v[1]), v) if target is None else criterion(model_v.decoder(model_t.encoder(t)).reshape(dims_v[0], dims_v[1]), v, target)
+        loss_cross_v = criterion(model_v.decoder(model_t.encoder(t)).reshape(dims_v[0], dims_v[1]), v) if loss_criterion=='mse' else criterion(model_v.decoder(model_t.encoder(t)).reshape(dims_v[0], dims_v[1]), v, target)
     
     # cycle loss
     loss_cycle_t = 0
     if cycle_t_active:
-        loss_cycle_t = criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))).reshape(dims_t[0], dims_t[1]), t) if target is None else criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))).reshape(dims_t[0], dims_t[1]), t, target)
+        loss_cycle_t = criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))).reshape(dims_t[0], dims_t[1]), t) if loss_criterion=='mse' else criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))).reshape(dims_t[0], dims_t[1]), t, target)
         
     loss_cycle_v = 0
     if cycle_v_active:
-        loss_cycle_v = criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))).reshape(dims_v[0], dims_v[1]), v) if target is None else criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))).reshape(dims_v[0], dims_v[1]), v, target)
+        loss_cycle_v = criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))).reshape(dims_v[0], dims_v[1]), v) if loss_criterion=='mse' else criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))).reshape(dims_v[0], dims_v[1]), v, target)
 
     # set coef hyperparams 
     a0, a1, a2, a3 = coefs
@@ -176,10 +176,10 @@ def average(losses):
 def evaluate_validation(model_v, model_t, vids, caps, coefs, active_losses):
     
     losses = [['joint', 'recons_v', 'recons_t', 'cross_v', 'cross_t', 'cycle_v', 'cycle_t', 'total']]
-    criterion = instantiate_loss_criterion(loss_criterion)
+    criterion, target_tensor = instantiate_loss_criterion(loss_criterion)
 
     for v,t in zip(vids,caps):
-        loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses)
+        loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses, target = target_tensor)
         losses.append([l.item() if isinstance(l,torch.Tensor) else l for l in loss])
 
     losses_avg = average(losses)
@@ -193,6 +193,22 @@ def evaluate_validation(model_v, model_t, vids, caps, coefs, active_losses):
         
     return -loss, losses, losses_avg
  
+    
+########################################
+
+def instantiate_loss_criterion(loss_criterion):
+    if loss_criterion == 'cosine':
+        # target_tensor = torch.Tensor(1) # use 1 to train for bringing together corresponding (positive) vectors
+        # target_tensor = torch.Tensor(-1) # use -1 to train for pushong apart dissimilar (negative) vectors
+        criterion = nn.CosineEmbeddingLoss()
+        # the cosine embedding loss takes a target y=1 for training positive (similar) vectors and y=-1 for training dissimilar (negative) vectors
+        target_tensor = torch.Tensor(1)
+    else:
+        criterion = nn.MSELoss()
+        target_tensor = None
+        
+    return criterion, target_tensor
+
 ########################################
 
 def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L, coefs, active_losses):   
@@ -238,16 +254,7 @@ def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
     
     losses_avg = []
 
-    if loss_criterion == 'cosine':
-        # target_tensor = torch.Tensor(1) # use 1 to train for bringing together corresponding (positive) vectors
-        # target_tensor = torch.Tensor(-1) # use -1 to train for pushong apart dissimilar (negative) vectors
-        criterion = nn.CosineEmbeddingLoss()
-        # the cosine embedding loss takes a target y=1 for training positive (similar) vectors and y=-1 for training dissimilar (negative) vectors
-        target_tensor = torch.Tensor(1)
-    else:
-        criterion = nn.MSELoss()
-        target_tensor = None
-
+    criterion, target_tensor = instantiate_loss_criterion(loss_criterion)
     
     ### train the model
     for epoch in range(n_epochs):
