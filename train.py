@@ -77,8 +77,8 @@ def log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_fi
     import uuid
     random_hash = uuid.uuid4().hex
 
-    exp_name = f'experiment_{lr}_{lr_step_size}_{lr_gamma}_{weight_decay}_{n_epochs}_{n_filt}_{L}x{n_feats_t}_{T}x{n_feats_v}'
-    exp_dir = f'{output_path}/experiments/{exp_name}_{random_hash}'
+    exp_name = f'experiment_{lr}_{lr_step_size}_{lr_gamma}_{weight_decay}_{n_epochs}_{n_filt}_{L}x{n_feats_t}_{T}x{n_feats_v}_{random_hash}'
+    exp_dir = f'{output_path}/experiments/{exp_name}'
     utils.create_dir_if_not_exist(exp_dir)
         
     info_path = f'{exp_dir}/experiment_info.txt'
@@ -103,7 +103,7 @@ def get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_fi
 
 ########################################
     
-def forward_multimodal(model_v, model_t, criterion, v, t, coefs=None, active_losses=None):
+def forward_multimodal(model_v, model_t, criterion, v, t, coefs=None, active_losses=None, target=None):
     '''
     Input: 
     model_v: video AE model
@@ -127,35 +127,35 @@ def forward_multimodal(model_v, model_t, criterion, v, t, coefs=None, active_los
     loss_recons_v = 0
     if reconst_v_active:
         v_reconst = model_v(v).reshape(dims_v[0], dims_v[1])
-        loss_recons_v = criterion(v_reconst, v)
+        loss_recons_v = criterion(v_reconst, v) if target is None else criterion(v_reconst, v, target)
         
     loss_recons_t = 0
     if reconst_t_active:
         t_reconst = model_t(t).reshape(dims_t[0], dims_t[1])
-        loss_recons_t = criterion(t_reconst, t)
+        loss_recons_t = criterion(t_reconst, t) if target is None else criterion(t_reconst, t, target)
 
     # joint loss
     loss_joint = 0
     if joint_active:
-        loss_joint = criterion(model_v.encoder(v), model_t.encoder(t))
+        loss_joint = criterion(model_v.encoder(v), model_t.encoder(t)) if target is None else criterion(model_v.encoder(v), model_t.encoder(t), target)
 
     # cross loss
     loss_cross_t = 0
     if cross_t_active:
-        loss_cross_t = criterion(model_t.decoder(model_v.encoder(v)).reshape(dims_t[0], dims_t[1]), t)
+        loss_cross_t = criterion(model_t.decoder(model_v.encoder(v)).reshape(dims_t[0], dims_t[1]), t) if target is None else criterion(model_t.decoder(model_v.encoder(v)).reshape(dims_t[0], dims_t[1]), t, target)
         
     loss_cross_v = 0
     if cross_v_active:
-        loss_cross_v = criterion(model_v.decoder(model_t.encoder(t)).reshape(dims_v[0], dims_v[1]), v)
+        loss_cross_v = criterion(model_v.decoder(model_t.encoder(t)).reshape(dims_v[0], dims_v[1]), v) if target is None else criterion(model_v.decoder(model_t.encoder(t)).reshape(dims_v[0], dims_v[1]), v, target)
     
     # cycle loss
     loss_cycle_t = 0
     if cycle_t_active:
-        loss_cycle_t = criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))).reshape(dims_t[0], dims_t[1]), t)
+        loss_cycle_t = criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))).reshape(dims_t[0], dims_t[1]), t) if target is None else criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))).reshape(dims_t[0], dims_t[1]), t, target)
         
     loss_cycle_v = 0
     if cycle_v_active:
-        loss_cycle_v = criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))).reshape(dims_v[0], dims_v[1]), v)
+        loss_cycle_v = criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))).reshape(dims_v[0], dims_v[1]), v) if target is None else criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))).reshape(dims_v[0], dims_v[1]), v, target)
 
     # set coef hyperparams 
     a0, a1, a2, a3 = coefs
@@ -176,7 +176,7 @@ def average(losses):
 def evaluate_validation(model_v, model_t, vids, caps, coefs, active_losses):
     
     losses = [['joint', 'recons_v', 'recons_t', 'cross_v', 'cross_t', 'cycle_v', 'cycle_t', 'total']]
-    criterion = nn.MSELoss()
+    criterion = instantiate_loss_criterion(loss_criterion)
 
     for v,t in zip(vids,caps):
         loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses)
@@ -192,7 +192,7 @@ def evaluate_validation(model_v, model_t, vids, caps, coefs, active_losses):
         loss = 1000
         
     return -loss, losses, losses_avg
-    
+ 
 ########################################
 
 def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L, coefs, active_losses):   
@@ -236,15 +236,25 @@ def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
     torch.optim.lr_scheduler.StepLR(optimizer_G_v, step_size = lr_step_size, gamma = lr_gamma)
     torch.optim.lr_scheduler.StepLR(optimizer_G_t, step_size = lr_step_size, gamma = lr_gamma)
     
-    criterion = nn.MSELoss()
-
     losses_avg = []
+
+    if loss_criterion == 'cosine':
+        # target_tensor = torch.Tensor(1) # use 1 to train for bringing together corresponding (positive) vectors
+        # target_tensor = torch.Tensor(-1) # use -1 to train for pushong apart dissimilar (negative) vectors
+        criterion = nn.CosineEmbeddingLoss()
+        # the cosine embedding loss takes a target y=1 for training positive (similar) vectors and y=-1 for training dissimilar (negative) vectors
+        target_tensor = torch.Tensor(1)
+    else:
+        criterion = nn.MSELoss()
+        target_tensor = None
+
+    
     ### train the model
     for epoch in range(n_epochs):
         counter = 1
         losses = [['joint', 'recons_t', 'recons_v', 'cross_t', 'cross_v', 'cycle_t', 'cycle_v', 'total']]
         for v,t in zip(vids,caps):
-            loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses)
+            loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses, target = target_tensor)
             losses.append([l.item() if isinstance(l,torch.Tensor) else l for l in loss])
 
             # Backprop and optimize
@@ -293,6 +303,9 @@ if __name__ == '__main__':
     parser.add_argument('--activate_cycle_v', action='store_true', help = 'enables training using video cycle loss')
     
     parser.add_argument('--activate_joint', action='store_true', help = 'enables training using joint loss')
+    
+    # loss criterion
+    parser.add_argument('--loss_criterion', default = 'mse') # MSELoss
     
     # lr step size
     parser.add_argument('--lr_step_size_min', type = int, default = 1, help = 'lr schedule: step size lower bound')
@@ -356,7 +369,7 @@ if __name__ == '__main__':
     t_feats_path = f'{repo_dir}/{args.text_feats_path}'
     
     if args.init_model_path is not None:
-        model_name = args.model_path.split('/')[-1]
+        model_name = args.init_model_path.split('/')[-1]
         model_t_path = f'{repo_dir}/{args.init_model_path}/model_t_{model_name}.sd'
         model_v_path = f'{repo_dir}/{args.init_model_path}/model_v_{model_name}.sd'
         load_existing_model = True
@@ -367,6 +380,8 @@ if __name__ == '__main__':
     bayes_n_iter = args.bayes_n_iter
     
     loss_coefs = (1,1,1,1)
+    
+    loss_criterion = args.loss_criterion
 
     # joint_active,reconst_v_active,reconst_t_active,cross_v_active,cross_t_active,cycle_v_active,cycle_t_active
     activated_losses = (args.activate_joint, args.activate_reconst_v, args.activate_reconst_t, args.activate_cross_t, args.activate_cross_t, args.activate_cycle_t, args.activate_cycle_t)
