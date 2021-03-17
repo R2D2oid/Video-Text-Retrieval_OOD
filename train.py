@@ -37,14 +37,14 @@ def evaluate_model(lr, lr_step_size, weight_decay):
     vids, caps = load_video_text_features(v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path, n_max=n_train_samples)
     
     # train model
-    model_v, model_t, train_losses, train_losses_avg = train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L)
+    model_v, model_t, train_losses, train_losses_avg = train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L, coefs = loss_coefs, active_losses = activated_losses)
     
     # load valid data
     valid_split_path = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output/valid.split.pkl'
     vids, caps = load_video_text_features(v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, valid_split_path)
     
     # calculate loss on validationn
-    valid_loss, valid_losses, valid_losses_avg = evaluate_validation(model_v, model_t, vids, caps)
+    valid_loss, valid_losses, valid_losses_avg = evaluate_validation(model_v, model_t, vids, caps, coefs=loss_coefs, active_losses=activated_losses)
     
     # log experiment meta data 
     exp_dir, exp_name = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L)
@@ -74,9 +74,11 @@ def save_experiment(model_v, model_t, train_losses, train_losses_avg, valid_loss
 ########################################
 
 def log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L):
-    
+    import uuid
+    random_hash = uuid.uuid4().hex
+
     exp_name = f'experiment_{lr}_{lr_step_size}_{lr_gamma}_{weight_decay}_{n_epochs}_{n_filt}_{L}x{n_feats_t}_{T}x{n_feats_v}'
-    exp_dir = f'{output_path}/experiments/{exp_name}'
+    exp_dir = f'{output_path}/experiments/{exp_name}_{random_hash}'
     utils.create_dir_if_not_exist(exp_dir)
         
     info_path = f'{exp_dir}/experiment_info.txt'
@@ -86,21 +88,22 @@ def log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_fi
     return exp_dir, exp_name
 
 ########################################
+
 def get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L):
     
     info = []
     
     for item,val in args.__dict__.items():
         info.append(f'{item}: {val}')
-    info.append(f'{lr}: {lr}')
-    info.append(f'{lr_step_size}: {lr_step_size}')
-    info.append(f'{weight_decay}: {weight_decay}')
+    info.append(f'lr: {lr}')
+    info.append(f'lr_step_size: {lr_step_size}')
+    info.append(f'weight_decay: {weight_decay}')
 
     return info
 
 ########################################
     
-def forward_multimodal(model_v, model_t, criterion, v, t, coefs = (1, 1, 1, 1), active_losses=(1,1,1,1,1,1,1)):
+def forward_multimodal(model_v, model_t, criterion, v, t, coefs=None, active_losses=None):
     '''
     Input: 
     model_v: video AE model
@@ -111,7 +114,6 @@ def forward_multimodal(model_v, model_t, criterion, v, t, coefs = (1, 1, 1, 1), 
     coefs: coefficients of loss components when computing total loss (i.e. reconstruction, joint, cross, cycle loss components)
     active losses: enables training the models based on a subset of loss components
     '''
-    
     joint_active,reconst_v_active,reconst_t_active,cross_v_active,cross_t_active,cycle_v_active,cycle_t_active = active_losses
     
     # model_v and model_t are the corresponding models for video and captions respectively
@@ -171,14 +173,14 @@ def average(losses):
 
 ################################
 
-def evaluate_validation(model_v, model_t, vids, caps):
+def evaluate_validation(model_v, model_t, vids, caps, coefs, active_losses):
     
     losses = [['joint', 'recons_v', 'recons_t', 'cross_v', 'cross_t', 'cycle_v', 'cycle_t', 'total']]
     criterion = nn.MSELoss()
 
     for v,t in zip(vids,caps):
-        loss = forward_multimodal(model_v, model_t, criterion, v, t)
-        losses.append([l.item() for l in loss])
+        loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses)
+        losses.append([l.item() if isinstance(l,torch.Tensor) else l for l in loss])
 
     losses_avg = average(losses)
     loss = losses_avg['total']
@@ -193,7 +195,7 @@ def evaluate_validation(model_v, model_t, vids, caps):
     
 ########################################
 
-def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L):   
+def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L, coefs, active_losses):   
              
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
@@ -201,9 +203,19 @@ def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
     model_v = AEwithAttention(n_feats_v, T, n_filt)
     model_t = AEwithAttention(n_feats_t, L, n_filt)
 
+    if load_existing_model:
+        model_v_file = open(model_v_path, 'rb')
+        model_t_file = open(model_t_path, 'rb')
+
+        model_v_sd = torch.load(model_v_file)
+        model_t_sd = torch.load(model_t_file)
+
+        model_v.load_state_dict(model_v_sd)
+        model_t.load_state_dict(model_t_sd)
+
     model_v.to(device)
     model_t.to(device)
-    
+
     # Adam optimizer
     optimizer_v = torch.optim.Adam(model_v.parameters(), lr = lr, weight_decay = weight_decay)
     optimizer_t = torch.optim.Adam(model_t.parameters(), lr = lr, weight_decay = weight_decay)
@@ -223,7 +235,7 @@ def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
 
     torch.optim.lr_scheduler.StepLR(optimizer_G_v, step_size = lr_step_size, gamma = lr_gamma)
     torch.optim.lr_scheduler.StepLR(optimizer_G_t, step_size = lr_step_size, gamma = lr_gamma)
-
+    
     criterion = nn.MSELoss()
 
     losses_avg = []
@@ -232,8 +244,8 @@ def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
         counter = 1
         losses = [['joint', 'recons_t', 'recons_v', 'cross_t', 'cross_v', 'cycle_t', 'cycle_v', 'total']]
         for v,t in zip(vids,caps):
-            loss = forward_multimodal(model_v, model_t, criterion, v, t)
-            losses.append([l.item() for l in loss])
+            loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses)
+            losses.append([l.item() if isinstance(l,torch.Tensor) else l for l in loss])
 
             # Backprop and optimize
             optimizer_v.zero_grad()
@@ -268,6 +280,8 @@ if __name__ == '__main__':
     parser.add_argument('--n_filters', type = int, default = 10, help = 'number of filters')
     parser.add_argument('--n_train_samples', type = int, default = None, help = 'number of training samples')
     
+    parser.add_argument('--init_model_path', default = None, help = 'if None, a new model will be instantiated. If path is provided, additional training will be done on the existing model.')
+
     # active losses
     parser.add_argument('--activate_reconst_t', action='store_true', help = 'enables training using text reconst loss')
     parser.add_argument('--activate_reconst_v', action='store_true', help = 'enables training using video reconst loss')
@@ -334,15 +348,28 @@ if __name__ == '__main__':
     n_feats_v = args.num_feats
     T = args.v_feat_len
     L = args.t_feat_len
-    
+      
     repo_dir = args.repo_dir
     train_split_path = f'{repo_dir}/{args.train_split_path}'
     output_path = f'{repo_dir}/{args.output_path}'
     v_feats_dir = f'{repo_dir}/{args.video_feats_dir}'
     t_feats_path = f'{repo_dir}/{args.text_feats_path}'
     
+    if args.init_model_path is not None:
+        model_name = args.model_path.split('/')[-1]
+        model_t_path = f'{repo_dir}/{args.init_model_path}/model_t_{model_name}.sd'
+        model_v_path = f'{repo_dir}/{args.init_model_path}/model_v_{model_name}.sd'
+        load_existing_model = True
+    else:
+        load_existing_model = False
+        
     bayes_init_points = args.bayes_init_points
     bayes_n_iter = args.bayes_n_iter
+    
+    loss_coefs = (1,1,1,1)
+
+    # joint_active,reconst_v_active,reconst_t_active,cross_v_active,cross_t_active,cycle_v_active,cycle_t_active
+    activated_losses = (args.activate_joint, args.activate_reconst_v, args.activate_reconst_t, args.activate_cross_t, args.activate_cross_t, args.activate_cycle_t, args.activate_cycle_t)
     
     # bounds of parameter space
     pbounds = {'lr': (lr_min, lr_max), 'lr_step_size': (lr_step_size_min, lr_step_size_max), 'weight_decay':(weight_decay_min, weight_decay_max)}
