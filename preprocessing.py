@@ -12,8 +12,9 @@ def preprocess_embeddings(embeddings, num_feats, T):
     embeddings = [unify_embedding_length(e, target_len) for e in embeddings]
     embeddings = [e.reshape(-1, num_feats) for e in embeddings]
     
+    embeddings = [e.cpu() for e in embeddings]
+
     if num_feats < n_feats_orig:
-        embeddings = [e.cpu() for e in embeddings]
         embeddings = pca_dim_reduction_2d(embeddings, pca_dims = num_feats)
     
     embeddings = [e/np.linalg.norm(e) for e in embeddings]
