@@ -391,7 +391,7 @@ if __name__ == '__main__':
     loss_criterion = args.loss_criterion
 
     # joint_active,reconst_v_active,reconst_t_active,cross_v_active,cross_t_active,cycle_v_active,cycle_t_active
-    activated_losses = (args.activate_joint, args.activate_reconst_v, args.activate_reconst_t, args.activate_cross_t, args.activate_cross_t, args.activate_cycle_t, args.activate_cycle_t)
+    activated_losses = (args.activate_joint, args.activate_reconst_v, args.activate_reconst_t, args.activate_cross_v, args.activate_cross_t, args.activate_cycle_v, args.activate_cycle_t)
     
     # bounds of parameter space
     pbounds = {'lr': (lr_min, lr_max), 'lr_step_size': (lr_step_size_min, lr_step_size_max), 'weight_decay':(weight_decay_min, weight_decay_max)}
