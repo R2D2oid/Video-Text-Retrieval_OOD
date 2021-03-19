@@ -2,6 +2,7 @@ import argparse
 import math
 import torch 
 import torch.nn as nn
+from torch.utils.tensorboard import SummaryWriter
 import numpy as np
 import pandas as pd
 from bayes_opt import BayesianOptimization
@@ -12,6 +13,9 @@ from preprocessing import load_video_text_features
 from layers.AEwithAttention import AEwithAttention
 
 torch.set_default_tensor_type(torch.cuda.FloatTensor)
+
+# init tensorboard
+writer = SummaryWriter('runs/')
 
 # init logging
 logfile = 'logs/logfile_{}.log'.format(dt.now())
@@ -255,7 +259,9 @@ def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
     losses_avg = []
 
     criterion, target_tensor = instantiate_loss_criterion(loss_criterion)
-    
+
+    writer.add_graph(model_v, torch.Tensor(vids[0]))
+
     ### train the model
     for epoch in range(n_epochs):
         counter = 1
@@ -283,10 +289,12 @@ def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
 
             logger.info('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, len(vids), loss[-1].item()))
 
+            writer.add_scalar("Loss/train", loss[-1].item(), epoch)
             counter = counter + 1 
         losses_avg.append(average(losses)) 
         logger.info(f'Epoch[{epoch + 1}/{n_epochs}], Loss: {losses_avg[-1]}')
-        
+    
+    writer.flush()
     return model_v, model_t, losses, losses_avg
 
 ########################################
@@ -406,4 +414,4 @@ if __name__ == '__main__':
         init_points=bayes_init_points,
         n_iter=bayes_n_iter,
     )
-    
+
