@@ -189,7 +189,7 @@ def evaluate_validation(model_v, model_t, vids, caps, coefs, active_losses):
     losses_avg = average(losses)
     loss = losses_avg['total']
     
-    writer.add_scalar("Loss/train", loss[-1].item(), epoch)
+    writer.add_scalar("Loss/valid", loss)
     writer.flush()
     logger.info(f'validation loss: {loss}')
         
