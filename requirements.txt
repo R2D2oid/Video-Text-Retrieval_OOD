@@ -1,4 +1,4 @@
-tensorflow==1.15.0
-tensorflow_hub
+torch
+torchvision
 sister
 bayesian-optimization
