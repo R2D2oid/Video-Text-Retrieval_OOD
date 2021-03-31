@@ -2,12 +2,13 @@ import torch
 import pickle as pkl
 from torch.utils.data import Dataset
 import utilities as utils
+import numpy as np
 
 class TempuckeyVideoSentencePairsDataset(Dataset):
     '''
     Loads video C3D and sentence features for all sentence/video segment pair from Tempuckey Video Sentence Pairs Dataset
     '''
-    def __init__(self, vid_feats_dir, txt_feats_path, split_ids, transform=None):
+    def __init__(self, vid_feats_dir, txt_feats_path, split_ids, video_seq_len=1, transform=None):
         '''
         Args:
             vid_feats_dir (string): Path to the video features directory
@@ -25,8 +26,8 @@ class TempuckeyVideoSentencePairsDataset(Dataset):
         self.sents  = sents
         self.split_ids = split_ids # a list of id names associated with each video/sentence pair 
 
-        self.transform = transform
-
+        self.video_seq_len = video_seq_len
+        
     def __len__(self):
         return len(self.split_ids)
 
@@ -35,10 +36,29 @@ class TempuckeyVideoSentencePairsDataset(Dataset):
         # idx_name is the name of the video/sentence 
         # example: 312_TRIPPING_2017-11-16-phi-wpg-home_00_17_33.052000_to_00_17_39.125000.mp4_00:17:46.532000_00:17:52.171000
         idx_name = self.split_ids[idx]
-        sample = {'video': self.videos[idx_name][0], 'sent': self.sents[idx_name]}
+        sample = {'video': self.videos[idx_name][:self.video_seq_len], 'sent': self.sents[idx_name]}
         return sample
-    
 
+    def get_dataset_mean_std(self):
+        # compute mean and std for video feature vectors
+        feat_vecs = []
+        for k,v in self.videos.items():
+            for vec in v:
+                feat_vecs.append(vec)
+        feat_vecs = np.array(feat_vecs)
+        v_mean = feat_vecs.mean(axis=0)
+        v_std = feat_vecs.std(axis=0)
+
+        # compute mean and std for text feature vectors
+        feat_vecs = []
+        for k,v in self.sents.items():
+            feat_vecs.append(v)
+        feat_vecs = np.array(feat_vecs)
+        t_mean = feat_vecs.mean(axis=0)
+        t_std = feat_vecs.std(axis=0)
+
+        return {'videos': (v_mean, v_std), 'sents': (t_mean, t_std)}
+    
 def remove_invalid_video_sentence_features(vids, caps):
     # remove video-captions that have an empty c3d features
     empty_ids = [k for k,v in vids.items() if len(v)==0]
