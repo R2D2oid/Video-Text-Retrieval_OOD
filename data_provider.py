@@ -27,6 +27,7 @@ class TempuckeyVideoSentencePairsDataset(Dataset):
   
         self.videos = videos
         self.sents  = sents
+        self.transform = transform()
         self.split_ids = split_ids # a list of id names associated with each video/sentence pair 
 
         self.video_feat_seq_len = video_feat_seq_len
@@ -50,9 +51,15 @@ class TempuckeyVideoSentencePairsDataset(Dataset):
         snt_feat = self.sents[idx_name].reshape(1,-1)
         
         vid_feat = unify_embedding_length(vid_feat, self.video_feat_seq_len)
-        snt_feat = unify_embedding_length(snt_feat, self.sent_feat_seq_len)  
+        snt_feat = unify_embedding_length(snt_feat, self.sent_feat_seq_len)
+        
+        self.dataset_stats = self.get_dataset_mean_std()
         
         sample = {'video': vid_feat, 'sent': snt_feat}
+
+        if self.transform:
+            sample = self.transform(sample, self.dataset_stats)
+            
         return sample
 
     def get_dataset_mean_std(self):
@@ -78,7 +85,23 @@ class TempuckeyVideoSentencePairsDataset(Dataset):
 
         return {'videos': (v_mean, v_std), 'sents': (t_mean, t_std)}
 
+    
+class Normalize_VideoSentencePair(object):
+    '''
+    Normalizes the input sample using the dataset mean and std
+    '''
+    
+    def __call__(self, sample, dataset_stats):
         
+        v_mean, v_std = dataset_stats['videos']
+        t_mean, t_std = dataset_stats['sents']
+
+        sample['video'] = (sample['video'] - v_mean)/v_std
+        sample['sent'] = (sample['sent'] - t_mean)/t_std
+
+        return {'video': sample['video'], 'sent': sample['sent']}
+    
+
 def unify_embedding_length(emb, target_len):
     '''
     Unify feat size to ensure all embeddings are n_feats x T
