@@ -6,7 +6,14 @@ import numpy as np
 
 class TempuckeyVideoSentencePairsDataset(Dataset):
     '''
-    Loads video C3D and sentence features for all sentence/video segment pair from Tempuckey Video Sentence Pairs Dataset
+    Loads video C3D and sentence features for all sentence/video segment pair from Tempuckey Video Sentence Pairs Dataset.
+    
+    Example Usage: 
+        from data_provider import TempuckeyVideoSentencePairsDataset as TempuckeyDataset
+        from data_provider import Normalize_VideoSentencePair, ToTensor_VideoSentencePair
+
+        my_transforms = [Normalize_VideoSentencePair(), ToTensor_VideoSentencePair()]
+        dataset_train = TempuckeyDataset(v_feats_dir, t_feats_path, ids_train, video_feat_seq_len=2, sent_feat_seq_len=2, transform=my_transforms)
     '''
     def __init__(self, vid_feats_dir, txt_feats_path, split_ids, video_feat_seq_len, sent_feat_seq_len, transform=None):
         '''
@@ -27,7 +34,7 @@ class TempuckeyVideoSentencePairsDataset(Dataset):
   
         self.videos = videos
         self.sents  = sents
-        self.transform = transform()
+        self.transform = transform
         self.split_ids = split_ids # a list of id names associated with each video/sentence pair 
 
         self.video_feat_seq_len = video_feat_seq_len
@@ -57,8 +64,8 @@ class TempuckeyVideoSentencePairsDataset(Dataset):
         
         sample = {'video': vid_feat, 'sent': snt_feat}
 
-        if self.transform:
-            sample = self.transform(sample, self.dataset_stats)
+        for trnsfrm in self.transform:
+            sample = trnsfrm(sample, dataset_stats=self.dataset_stats)
             
         return sample
 
@@ -91,8 +98,12 @@ class Normalize_VideoSentencePair(object):
     Normalizes the input sample using the dataset mean and std
     '''
     
-    def __call__(self, sample, dataset_stats):
-        
+    def __call__(self, sample, **args):
+    
+        if 'dataset_stats' not in args.keys():
+            raise exception('Missing argument: dataset_stats dict, format: {"videos":(mean,std), "sents":(mean,std)}')
+            
+        dataset_stats = args['dataset_stats']
         v_mean, v_std = dataset_stats['videos']
         t_mean, t_std = dataset_stats['sents']
 
@@ -101,7 +112,15 @@ class Normalize_VideoSentencePair(object):
 
         return {'video': sample['video'], 'sent': sample['sent']}
     
-
+    
+class ToTensor_VideoSentencePair(object):
+    '''
+    Converts video sentence pair sample to tensor
+    '''
+    
+    def __call__(self, sample, **args):
+        return {'video': torch.tensor(sample['video']), 'sent': torch.tensor(sample['sent'])}
+    
 def unify_embedding_length(emb, target_len):
     '''
     Unify feat size to ensure all embeddings are n_feats x T
