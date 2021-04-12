@@ -66,7 +66,9 @@ class TempuckeyVideoSentencePairsDataset(Dataset):
 
         for trnsfrm in self.transform:
             sample = trnsfrm(sample, dataset_stats=self.dataset_stats)
-            
+        
+        sample = {'video': torch.tensor(sample['video']).float(), 'sent': torch.tensor(sample['sent']).float()}
+        
         return sample
 
     def get_dataset_mean_std(self):
@@ -131,9 +133,9 @@ def unify_embedding_length(emb, target_len):
     if emb_len < target_len:
         len_diff = target_len - emb_len
         zero_padding = np.zeros([len_diff, num_feats])
-        return torch.tensor(np.vstack((emb, zero_padding))).float()
+        return np.vstack((emb, zero_padding))
     else:
-        return torch.tensor(emb[0:target_len]).float()
+        return np.array(emb[0:target_len])
     
 def remove_invalid_video_sentence_features(vids, caps):
     '''
