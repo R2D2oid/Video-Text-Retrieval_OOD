@@ -9,8 +9,12 @@ from bayes_opt import BayesianOptimization
 import logging
 from datetime import datetime as dt
 import utilities as utils
-from preprocessing import load_video_text_features
 from layers.AEwithAttention import AEwithAttention
+from data_provider import TempuckeyVideoSentencePairsDataset as TempuckeyDataset
+from data_provider import Normalize_VideoSentencePair
+
+from numpy import linalg
+import pdb
 
 torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
@@ -33,15 +37,15 @@ logger = logging.getLogger()
 
 def evaluate_model(lr, lr_step_size, weight_decay):
   
+    torch.multiprocessing.set_start_method('spawn')
+
     # display experiment info
     exp_info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L)
     logger.info(exp_info)
     
-    # load train data
-    vids, caps = load_video_text_features(v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, train_split_path, n_max=n_train_samples)
-    
-    # train model
-    model_v, model_t, train_losses, train_losses_avg = train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L, coefs = loss_coefs, active_losses = activated_losses)
+    # data loader
+    train_split_path = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output/train.split.pkl'
+    model_v, model_t, train_losses, train_losses_avg = train_model(train_split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L, coefs = loss_coefs, active_losses = activated_losses)
     
     # load valid data
     valid_split_path = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output/valid.split.pkl'
@@ -217,10 +221,22 @@ def instantiate_loss_criterion(loss_criterion):
 
 ########################################
 
-def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L, coefs, active_losses):   
+def train_model(train_split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L, coefs, active_losses):   
              
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # dataloader
+    ids_train = utils.load_picklefile(train_split_path)
+    dataset_train = TempuckeyDataset(v_feats_dir, t_feats_path, ids_train, video_feat_seq_len=T, sent_feat_seq_len=L, transform=[Normalize_VideoSentencePair()])
+
+    dl_params = {'batch_size': 2,
+          'shuffle': False,
+          'num_workers': 1}
+    
+    data_loader = torch.utils.data.DataLoader(dataset_train, **dl_params)
+    
+    num_samples = data_loader.__len__()
+    
     ### create AE model for video and text encoding  
     model_v = AEwithAttention(n_feats_v, T, n_filt)
     model_t = AEwithAttention(n_feats_t, L, n_filt)
@@ -262,13 +278,17 @@ def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
 
     criterion, target_tensor = instantiate_loss_criterion(loss_criterion)
 
-    writer.add_graph(model_v, torch.Tensor(vids[0]))
+    
+#     writer.add_graph(model_v, torch.Tensor(vids[0]))
 
     ### train the model
     for epoch in range(n_epochs):
         counter = 1
         losses = [['joint', 'recons_t', 'recons_v', 'cross_t', 'cross_v', 'cycle_t', 'cycle_v', 'total']]
-        for v,t in zip(vids,caps):
+        for sample in data_loader:
+            v = sample['video'][0]
+            t = sample['sent'][0]
+
             loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses, target = target_tensor)
             losses.append([l.item() if isinstance(l,torch.Tensor) else l for l in loss])
 
@@ -281,7 +301,7 @@ def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
             optimizer_G_t.zero_grad()
 
             loss[-1].backward()
-
+            
             optimizer_v.step()
             optimizer_t.step()
             optimizer_E_v.step()
@@ -289,7 +309,7 @@ def train_model(vids, caps, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
             optimizer_G_v.step()
             optimizer_G_t.step()
 
-            logger.info('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, len(vids), loss[-1].item()))
+            logger.info('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, num_samples, loss[-1].item()))
 
             writer.add_scalar("Loss/train", loss[-1].item(), epoch)
             counter = counter + 1 
@@ -339,7 +359,9 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay_min', type = float, default = 0.0001, help = 'weight decay lower bound')
     parser.add_argument('--weight_decay_max', type = float, default = 0.1, help = 'weight decay upper bound')
     
-    parser.add_argument('--num_feats', type = int, default = 512, help = 'number of feats in each vector')
+    parser.add_argument('--t_num_feats', type = int, default = 300, help = 'number of feats in each vector')
+    parser.add_argument('--v_num_feats', type = int, default = 512, help = 'number of feats in each vector')
+
     parser.add_argument('--t_feat_len', type = int, default = 1, help = 'length of feat vector')
     parser.add_argument('--v_feat_len', type = int, default = 5, help = 'length of feat vector')
     
@@ -374,8 +396,8 @@ if __name__ == '__main__':
     n_filt = args.n_filters
     n_train_samples = args.n_train_samples
     
-    n_feats_t = args.num_feats
-    n_feats_v = args.num_feats
+    n_feats_t = args.t_num_feats
+    n_feats_v = args.v_num_feats
     T = args.v_feat_len
     L = args.t_feat_len
       
