@@ -49,10 +49,9 @@ def evaluate_model(lr, lr_step_size, weight_decay):
     
     # load valid data
     valid_split_path = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output/valid.split.pkl'
-    vids, caps = load_video_text_features(v_feats_dir, t_feats_path, n_feats_t, n_feats_v, T, L, valid_split_path)
     
     # calculate loss on validationn
-    valid_loss, valid_losses, valid_losses_avg = evaluate_validation(model_v, model_t, vids, caps, coefs=loss_coefs, active_losses=activated_losses)
+    valid_loss, valid_losses, valid_losses_avg = evaluate_validation(model_v, model_t, valid_split_path, coefs=loss_coefs, active_losses=activated_losses)
     
     # log experiment meta data 
     exp_dir, exp_name = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L)
@@ -181,12 +180,25 @@ def average(losses):
 
 ################################
 
-def evaluate_validation(model_v, model_t, vids, caps, coefs, active_losses):
+def evaluate_validation(model_v, model_t, split_path, coefs, active_losses):
+    
+    # dataloader
+    ids_valid = utils.load_picklefile(split_path)
+    dataset_valid = TempuckeyDataset(v_feats_dir, t_feats_path, ids_train, video_feat_seq_len=T, sent_feat_seq_len=L, transform=[Normalize_VideoSentencePair()])
+
+    dl_params = {'batch_size': 2,
+          'shuffle': False,
+          'num_workers': 1}
+    
+    data_loader = torch.utils.data.DataLoader(dataset_valid, **dl_params)
     
     losses = [['joint', 'recons_v', 'recons_t', 'cross_v', 'cross_t', 'cycle_v', 'cycle_t', 'total']]
     criterion, target_tensor = instantiate_loss_criterion(loss_criterion)
 
-    for v,t in zip(vids,caps):
+    for sample in data_loader:
+        v = sample['video'][0]
+        t = sample['sent'][0]
+
         loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses, target = target_tensor)
         losses.append([l.item() if isinstance(l,torch.Tensor) else l for l in loss])
 
@@ -221,12 +233,12 @@ def instantiate_loss_criterion(loss_criterion):
 
 ########################################
 
-def train_model(train_split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L, coefs, active_losses):   
+def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L, coefs, active_losses):   
              
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # dataloader
-    ids_train = utils.load_picklefile(train_split_path)
+    ids_train = utils.load_picklefile(split_path)
     dataset_train = TempuckeyDataset(v_feats_dir, t_feats_path, ids_train, video_feat_seq_len=T, sent_feat_seq_len=L, transform=[Normalize_VideoSentencePair()])
 
     dl_params = {'batch_size': 2,
