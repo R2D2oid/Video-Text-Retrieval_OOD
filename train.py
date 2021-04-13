@@ -186,7 +186,7 @@ def evaluate_validation(model_v, model_t, split_path, coefs, active_losses):
     ids_valid = utils.load_picklefile(split_path)
     dataset_valid = TempuckeyDataset(v_feats_dir, t_feats_path, ids_train, video_feat_seq_len=T, sent_feat_seq_len=L, transform=[Normalize_VideoSentencePair()])
 
-    dl_params = {'batch_size': 2,
+    dl_params = {'batch_size': 1,
           'shuffle': False,
           'num_workers': 1}
     
@@ -241,7 +241,7 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
     ids_train = utils.load_picklefile(split_path)
     dataset_train = TempuckeyDataset(v_feats_dir, t_feats_path, ids_train, video_feat_seq_len=T, sent_feat_seq_len=L, transform=[Normalize_VideoSentencePair()])
 
-    dl_params = {'batch_size': 2,
+    dl_params = {'batch_size': 1,
           'shuffle': False,
           'num_workers': 1}
     
