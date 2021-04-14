@@ -3,7 +3,7 @@ import time
 import datetime
 import utilities as utils
 
-home_dir = '/home/pishu/Desktop/repos/datasets'
+home_dir = '/home/pishu/Desktop/repos/datasets' # rearranged sentence segments data under Tempuckey on rocket. paths below will need to be updated
 json_path = '{}/Tempuckey/Tempuckey_video_text_pair.json'.format(home_dir)
 corpus_path = '{}/NHL_ClosedCaption/corpus_with_timestamp'.format(home_dir)
 videos_path = '{}/Tempuckey/videos'.format(home_dir)
