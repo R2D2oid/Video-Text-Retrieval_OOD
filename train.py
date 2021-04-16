@@ -43,14 +43,16 @@ def evaluate_model(lr, lr_step_size, weight_decay):
     exp_info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L)
     logger.info(exp_info)
     
-    # data loader
-    train_split_path = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output/train.split.pkl'
+    # train data loader
+    train_split_path = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments/train.split.pkl'
+    
+    # train 
     model_v, model_t, train_losses, train_losses_avg = train_model(train_split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_filt, n_feats_t, n_feats_v, T, L, coefs = loss_coefs, active_losses = activated_losses)
     
-    # load valid data
-    valid_split_path = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output/valid.split.pkl'
+    # valid data loader
+    valid_split_path = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments/valid.split.pkl'
     
-    # calculate loss on validationn
+    # calculate loss on validation
     valid_loss, valid_losses, valid_losses_avg = evaluate_validation(model_v, model_t, valid_split_path, coefs=loss_coefs, active_losses=activated_losses)
     
     # log experiment meta data 
@@ -182,9 +184,9 @@ def average(losses):
 
 def evaluate_validation(model_v, model_t, split_path, coefs, active_losses):
     
-    # dataloader
+    # valid dataloader
     ids_valid = utils.load_picklefile(split_path)
-    dataset_valid = TempuckeyDataset(v_feats_dir, t_feats_path, ids_train, video_feat_seq_len=T, sent_feat_seq_len=L, transform=[Normalize_VideoSentencePair()])
+    dataset_valid = TempuckeyDataset(v_feats_dir, t_feats_path, ids_valid, video_feat_seq_len=T, sent_feat_seq_len=L, transform=[Normalize_VideoSentencePair()])
 
     dl_params = {'batch_size': 1,
           'shuffle': False,
@@ -195,12 +197,16 @@ def evaluate_validation(model_v, model_t, split_path, coefs, active_losses):
     losses = [['joint', 'recons_v', 'recons_t', 'cross_v', 'cross_t', 'cycle_v', 'cycle_t', 'total']]
     criterion, target_tensor = instantiate_loss_criterion(loss_criterion)
 
+    model_v.eval()
+    model_t.eval()
+    
     for sample in data_loader:
         v = sample['video'][0]
         t = sample['sent'][0]
-
-        loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses, target = target_tensor)
-        losses.append([l.item() if isinstance(l,torch.Tensor) else l for l in loss])
+        
+        with torch.no_grad():
+            loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses, target = target_tensor)
+            losses.append([l.item() if isinstance(l,torch.Tensor) else l for l in loss])
 
     losses_avg = average(losses)
     loss = losses_avg['total']
@@ -252,7 +258,8 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
     ### create AE model for video and text encoding  
     model_v = AEwithAttention(n_feats_v, T, n_filt)
     model_t = AEwithAttention(n_feats_t, L, n_filt)
-
+    
+    
     if load_existing_model:
         model_v_file = open(model_v_path, 'rb')
         model_t_file = open(model_t_path, 'rb')
@@ -263,6 +270,9 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
         model_v.load_state_dict(model_v_sd)
         model_t.load_state_dict(model_t_sd)
 
+    model_v.train()
+    model_t.train()
+    
     model_v.to(device)
     model_t.to(device)
 
@@ -323,9 +333,10 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
 
             logger.info('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, num_samples, loss[-1].item()))
 
-            writer.add_scalar("Loss/train", loss[-1].item(), epoch)
+            #writer.add_scalar("Loss/train", loss[-1].item(), epoch)
             counter = counter + 1 
         losses_avg.append(average(losses)) 
+        writer.add_scalar("AvgLoss/train", losses_avg[-1].item(), epoch)
         logger.info(f'Epoch[{epoch + 1}/{n_epochs}], Loss: {losses_avg[-1]}')
     
     writer.flush()
@@ -334,6 +345,8 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
 ########################################
 
 if __name__ == '__main__':
+    ### python3 train.py --n_epochs 3 --t_num_feats 300 --v_num_feats 512 --activate_reconst_t --activate_reconst_v --loss_criterion mse
+
     parser = argparse.ArgumentParser ()
     parser.add_argument('--n_epochs', type = int, default = 10, help = 'number of iterations')
     parser.add_argument('--n_filters', type = int, default = 10, help = 'number of filters')
@@ -371,19 +384,19 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay_min', type = float, default = 0.0001, help = 'weight decay lower bound')
     parser.add_argument('--weight_decay_max', type = float, default = 0.1, help = 'weight decay upper bound')
     
-    parser.add_argument('--t_num_feats', type = int, default = 300, help = 'number of feats in each vector')
+    parser.add_argument('--t_num_feats', type = int, default = 512, help = 'number of feats in each vector')
     parser.add_argument('--v_num_feats', type = int, default = 512, help = 'number of feats in each vector')
 
     parser.add_argument('--t_feat_len', type = int, default = 1, help = 'length of feat vector')
-    parser.add_argument('--v_feat_len', type = int, default = 5, help = 'length of feat vector')
+    parser.add_argument('--v_feat_len', type = int, default = 16, help = 'length of feat vector')
     
-    parser.add_argument('--bayes_n_iter', type = int, default = 10, help = 'bayesian optimization num iterations')
-    parser.add_argument('--bayes_init_points', type = int, default = 5, help = 'bayesian optimization init points')
+    parser.add_argument('--bayes_n_iter', type = int, default = 1, help = 'bayesian optimization num iterations')
+    parser.add_argument('--bayes_init_points', type = int, default = 1, help = 'bayesian optimization init points')
     
-    parser.add_argument('--repo_dir', default = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD')
-    parser.add_argument('--video_feats_dir', default = 'output/sentence_segments_feats/video/c3d')
-    parser.add_argument('--text_feats_path', default = 'output/sentence_segments_feats/text/fasttext/sentence_feats.pkl')
-    parser.add_argument('--train_split_path', default = 'output/train.split.pkl')
+    parser.add_argument('--repo_dir', default = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments')
+    parser.add_argument('--video_feats_dir', default = 'feats/video/resnet18')
+    parser.add_argument('--text_feats_path', default = 'feats/text/universal/sentence_feats.pkl')
+    parser.add_argument('--train_split_path', default = 'train.split.pkl')
     parser.add_argument('--output_path', default = 'output')
 
       
