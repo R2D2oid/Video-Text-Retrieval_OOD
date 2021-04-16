@@ -23,6 +23,6 @@
 `Train_VTR_AE_with_Attention.ipynb`
 
 In order to evaluate the out of domain sentence detection model on Video Text Retireval (VTR) task, we have created a new presentation (format) of the Tempuckey dataset (in this repo) that generates (cuts) a short video segment per each sentence in the subtitles. This format allows us to create a Video Text Retreival model to retreive the videos using the sentences that the annotators say and vice versa.
-The video segments (one per sentence) are stored at `/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output/sentence_segments/` and the sentences associated with each video are stored at `/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output/sentence_segments.pkl`
+The video segments (one per sentence) are stored at `/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments/video_segments` and the annotations (inclusing the sentences and their start/end time associated with each video) are stored at `/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments/sentences.pkl`
 
 *note: some c3d video features are empty due to an issue with the feature extractor that relies on videos with a certain minimum length.
