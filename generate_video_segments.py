@@ -45,6 +45,6 @@ for sent_id,v in sent_segs.items():
 	dst_ = f'{path_output}/{sent_id}.mp4'
 
 	try:
-		out, err = utils.ffmpeg_cut(src_, dst_, clp_beg_td, clp_end_td)
+		out, err = utils.ffmpeg_cut_re_encode(src_, dst_, clp_beg_td, clp_end_td)
 	except Exception as e:
 		pdb.set_trace()
