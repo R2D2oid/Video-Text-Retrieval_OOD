@@ -111,6 +111,12 @@ def ffmpeg_cut(src, dest, start_time, end_time):
     print(cmd)
     return run_cmd(cmd)
 
+def ffmpeg_cut_re_encode(src, dest, start_time, end_time):  
+    # ffmpeg -i inputVideo.mp4 -ss 00:03 -to 00:08 -c:v libx264 outputVideo_trimmed_opseek_encode.mp4
+    cmd = 'ffmpeg -i \"{}\" -ss {} -to {} -c:v libx264  \"{}\"'.format(src, start_time, end_time, dest)
+    print(cmd)
+    return run_cmd(cmd)
+
 def seconds_to_time(seconds): 
     return time.strftime('%H:%M:%S.%M', time.gmtime(seconds))
       
