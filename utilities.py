@@ -113,7 +113,7 @@ def ffmpeg_cut(src, dest, start_time, end_time):
 
 def ffmpeg_cut_re_encode(src, dest, start_time, end_time):  
     # ffmpeg -i inputVideo.mp4 -ss 00:03 -to 00:08 -c:v libx264 outputVideo_trimmed_opseek_encode.mp4
-    cmd = 'ffmpeg -i \"{}\" -ss {} -to {} -c:v libx264  \"{}\"'.format(src, start_time, end_time, dest)
+    cmd = 'ffmpeg -ss {} -i \"{}\" -to {} -c:v libx264  \"{}\"'.format(start_time, src, end_time, dest)
     print(cmd)
     return run_cmd(cmd)
 
