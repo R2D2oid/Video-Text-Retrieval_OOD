@@ -130,10 +130,12 @@ def seconds_to_dt_time(seconds):
 def load_video_feats(vid_feat_dir):
     feat_type = vid_feat_dir.split('/')[-1]
     vid_feats = {}
-    if feat_type == 'c3d':
+    if feat_type == 'c3d' or feat_type.startswith('r2plus1d'):
         fnames = get_filenames(vid_feat_dir)
         for fname in fnames:
             id_ = fname[:-8]
+            if feat_type.startswith(''):
+                id_ = fname[30:-13]
             with open(f'{vid_feat_dir}/{fname}','rb') as f:
                 vid_feat = np.load(f)
                 vid_feats[id_] = vid_feat
