@@ -34,6 +34,10 @@ logging.basicConfig (
 logging.getLogger ().addHandler (logging.StreamHandler())
 logger = logging.getLogger()
     
+dl_params = {'batch_size': batch_size,
+      'shuffle': False,
+      'num_workers': 1}
+
 ################################################
 
 def evaluate_model(lr, lr_step_size, weight_decay):
@@ -48,6 +52,7 @@ def evaluate_model(lr, lr_step_size, weight_decay):
     train_split_path = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments/train.split.pkl'
     
     # train 
+    torch.set_grad_enabled(True)
     model_v, model_t, train_losses, train_losses_avg = train_model(train_split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, coefs = loss_coefs, active_losses = activated_losses)
     
     # valid data loader
@@ -136,13 +141,12 @@ def forward_multimodal(model_v, model_t, criterion, v, t, coefs=None, active_los
     # recons loss
     loss_recons_v = 0
     if reconst_v_active:
-        v_reconst = model_v(v).reshape(dims_v[0], dims_v[1])
-        ########!!!!!!!!!! verify dims of v and reconst v to ensure they are compatible
+        v_reconst = model_v(v)
         loss_recons_v = criterion(v_reconst, v) if loss_criterion=='mse' else criterion(v_reconst, v, target)
         
     loss_recons_t = 0
     if reconst_t_active:
-        t_reconst = model_t(t).reshape(dims_t[0], dims_t[1])
+        t_reconst = model_t(t)
         loss_recons_t = criterion(t_reconst, t) if loss_criterion=='mse' else criterion(t_reconst, t, target)
 
     # joint loss
@@ -189,10 +193,6 @@ def evaluate_validation(model_v, model_t, split_path, coefs, active_losses):
     # valid dataloader
     ids_valid = utils.load_picklefile(split_path)
     dataset_valid = TempuckeyDataset(v_feats_dir, t_feats_path, ids_valid, video_feat_seq_len=T, sent_feat_seq_len=L, transform=[Normalize_VideoSentencePair()])
-
-    dl_params = {'batch_size': 1,
-          'shuffle': False,
-          'num_workers': 1}
     
     data_loader = torch.utils.data.DataLoader(dataset_valid, **dl_params)
     
@@ -203,9 +203,11 @@ def evaluate_validation(model_v, model_t, split_path, coefs, active_losses):
     model_t.eval()
     
     for sample in data_loader:
-        v = sample['video'][0]
-        t = sample['sent'][0]
+        v = sample['video']
+        t = sample['sent']
         
+        print('shape video sample: ',sample['video'].shape)
+        print('shape text sample: ',sample['sent'].shape)
         with torch.no_grad():
             loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses, target = target_tensor)
             losses.append([l.item() if isinstance(l,torch.Tensor) else l for l in loss])
@@ -248,11 +250,7 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
     # dataloader
     ids_train = utils.load_picklefile(split_path)
     dataset_train = TempuckeyDataset(v_feats_dir, t_feats_path, ids_train, video_feat_seq_len=T, sent_feat_seq_len=L, transform=[Normalize_VideoSentencePair()])
-
-    dl_params = {'batch_size': 1,
-          'shuffle': False,
-          'num_workers': 1}
-    
+ 
     data_loader = torch.utils.data.DataLoader(dataset_train, **dl_params)
     
     num_samples = data_loader.__len__()
@@ -311,11 +309,12 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
         losses = [['joint', 'recons_t', 'recons_v', 'cross_t', 'cross_v', 'cycle_t', 'cycle_v', 'total']]
         
         for sample in data_loader:
-            v = sample['video'][0]
-            t = sample['sent'][0]
+            v = sample['video']
+            t = sample['sent']
 
             if flag == True:
                 writer.add_graph(model_v, torch.Tensor(v))
+                flag = False
             
             loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses, target = target_tensor)
             losses.append([l.item() if isinstance(l,torch.Tensor) else l for l in loss])
@@ -391,26 +390,30 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay_min', type = float, default = 0.0001, help = 'weight decay lower bound')
     parser.add_argument('--weight_decay_max', type = float, default = 0.1, help = 'weight decay upper bound')
     
+    # batch size
+    parser.add_argument('--batch_size', type = int, default = 64, help = 'batch size')
+
+    # num feats
     parser.add_argument('--t_num_feats', type = int, default = 512, help = 'number of feats in each vector')
     parser.add_argument('--v_num_feats', type = int, default = 2048, help = 'number of feats in each vector')
 
+    # feat sequence length
     parser.add_argument('--t_feat_len', type = int, default = 1, help = 'length of feat vector')
     parser.add_argument('--v_feat_len', type = int, default = 1, help = 'length of feat vector')
     
+    # bayesian optimization parameters
     parser.add_argument('--bayes_n_iter', type = int, default = 1, help = 'bayesian optimization num iterations')
     parser.add_argument('--bayes_init_points', type = int, default = 1, help = 'bayesian optimization init points')
     
+    # io params
     parser.add_argument('--repo_dir', default = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments')
     parser.add_argument('--video_feats_dir', default = 'feats/video/r2plus1d_resnet50_kinetics400')
     parser.add_argument('--text_feats_path', default = 'feats/text/universal/sentence_feats.pkl')
     parser.add_argument('--train_split_path', default = 'train.split.pkl')
     parser.add_argument('--output_path', default = 'output')
 
-      
-    ### get args
     args = parser.parse_args()
     
-    logger.info('\n\n**************************\nStarting a new run with bayes optimizer\n**************************\n\n')
     logger.info(args)
 
     lr_min = args.lr_min
@@ -423,6 +426,8 @@ if __name__ == '__main__':
     
     weight_decay_min = args.weight_decay_min
     weight_decay_max = args.weight_decay_max
+    
+    batch_size = args.batch_size
     
     n_epochs = args.n_epochs
     n_train_samples = args.n_train_samples
@@ -456,17 +461,25 @@ if __name__ == '__main__':
     # joint_active,reconst_v_active,reconst_t_active,cross_v_active,cross_t_active,cycle_v_active,cycle_t_active
     activated_losses = (args.activate_joint, args.activate_reconst_v, args.activate_reconst_t, args.activate_cross_v, args.activate_cross_t, args.activate_cycle_v, args.activate_cycle_t)
     
-    # bounds of parameter space
-    pbounds = {'lr': (lr_min, lr_max), 'lr_step_size': (lr_step_size_min, lr_step_size_max), 'weight_decay':(weight_decay_min, weight_decay_max)}
+    weight_decay = (weight_decay_min+weight_decay_max)/2
+    lr_step_size = (lr_step_size_min+lr_step_size_max)/2
+    lr = (lr_min+lr_max)/2
+    print(lr, lr_step_size, weight_decay)
+    
+    validation_loss = evaluate_model(lr,lr_step_size, weight_decay)
+    print(validation_loss)
+    
+#     # bounds of parameter space
+#     pbounds = {'lr': (lr_min, lr_max), 'lr_step_size': (lr_step_size_min, lr_step_size_max), 'weight_decay':(weight_decay_min, weight_decay_max)}
 
-    optimizer = BayesianOptimization(
-        f=evaluate_model,
-        pbounds=pbounds,
-        random_state=42,
-    )
+#     optimizer = BayesianOptimization(
+#         f=evaluate_model,
+#         pbounds=pbounds,
+#         random_state=42,
+#     )
 
-    optimizer.maximize(
-        init_points=bayes_init_points,
-        n_iter=bayes_n_iter,
-    )
+#     optimizer.maximize(
+#         init_points=bayes_init_points,
+#         n_iter=bayes_n_iter,
+#     )
 
