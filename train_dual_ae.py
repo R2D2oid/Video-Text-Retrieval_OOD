@@ -34,10 +34,6 @@ logging.basicConfig (
 logging.getLogger ().addHandler (logging.StreamHandler())
 logger = logging.getLogger()
     
-dl_params = {'batch_size': batch_size,
-      'shuffle': False,
-      'num_workers': 1}
-
 ################################################
 
 def evaluate_model(lr, lr_step_size, weight_decay):
@@ -437,6 +433,10 @@ if __name__ == '__main__':
     T = args.v_feat_len
     L = args.t_feat_len
       
+    dl_params = {'batch_size': batch_size,
+        'shuffle': False,
+        'num_workers': 1}
+        
     repo_dir = args.repo_dir
     train_split_path = f'{repo_dir}/{args.train_split_path}'
     output_path = f'{repo_dir}/{args.output_path}'
