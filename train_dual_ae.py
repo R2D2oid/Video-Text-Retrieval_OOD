@@ -153,20 +153,20 @@ def forward_multimodal(model_v, model_t, criterion, v, t, coefs=None, active_los
     # cross loss
     loss_cross_t = 0
     if cross_t_active:
-        loss_cross_t = criterion(model_t.decoder(model_v.encoder(v)).reshape(dims_t[0], dims_t[1]), t) if loss_criterion=='mse' else criterion(model_t.decoder(model_v.encoder(v)).reshape(dims_t[0], dims_t[1]), t, target)
+        loss_cross_t = criterion(model_t.decoder(model_v.encoder(v)), t) if loss_criterion=='mse' else criterion(model_t.decoder(model_v.encoder(v)), t, target)
         
     loss_cross_v = 0
     if cross_v_active:
-        loss_cross_v = criterion(model_v.decoder(model_t.encoder(t)).reshape(dims_v[0], dims_v[1]), v) if loss_criterion=='mse' else criterion(model_v.decoder(model_t.encoder(t)).reshape(dims_v[0], dims_v[1]), v, target)
+        loss_cross_v = criterion(model_v.decoder(model_t.encoder(t)), v) if loss_criterion=='mse' else criterion(model_v.decoder(model_t.encoder(t)), v, target)
     
     # cycle loss
     loss_cycle_t = 0
     if cycle_t_active:
-        loss_cycle_t = criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))).reshape(dims_t[0], dims_t[1]), t) if loss_criterion=='mse' else criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))).reshape(dims_t[0], dims_t[1]), t, target)
+        loss_cycle_t = criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))), t) if loss_criterion=='mse' else criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))), t, target)
         
     loss_cycle_v = 0
     if cycle_v_active:
-        loss_cycle_v = criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))).reshape(dims_v[0], dims_v[1]), v) if loss_criterion=='mse' else criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))).reshape(dims_v[0], dims_v[1]), v, target)
+        loss_cycle_v = criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))), v) if loss_criterion=='mse' else criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))), v, target)
 
     # set coef hyperparams 
     a0, a1, a2, a3 = coefs
@@ -202,24 +202,14 @@ def evaluate_validation(model_v, model_t, split_path, coefs, active_losses):
         v = sample['video']
         t = sample['sent']
         
-        print('shape video sample: ',sample['video'].shape)
-        print('shape text sample: ',sample['sent'].shape)
         with torch.no_grad():
             loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses, target = target_tensor)
             losses.append([l.item() if isinstance(l,torch.Tensor) else l for l in loss])
 
     losses_avg = average(losses)
-    loss = losses_avg['total']
-    
-    writer.add_scalar("Loss/valid", loss)
-    writer.flush()
-    logger.info(f'validation loss: {loss}')
-        
-    if loss is math.nan:
-        print('oops! nan again!')
-        loss = 1000
-        
-    return -loss, losses, losses_avg
+    loss = -losses_avg['total']
+            
+    return loss, losses, losses_avg
  
     
 ########################################
@@ -301,8 +291,9 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
     
     ### train the model
     for epoch in range(n_epochs):
-        counter = 1
-        losses = [['joint', 'recons_t', 'recons_v', 'cross_t', 'cross_v', 'cycle_t', 'cycle_v', 'total']]
+        counter = 1    
+        
+        losses = [['joint', 'recons_v', 'recons_t', 'cross_v', 'cross_t', 'cycle_v', 'cycle_t', 'total']]
         
         for sample in data_loader:
             v = sample['video']
@@ -337,11 +328,20 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
             counter = counter + 1 
 
         losses_avg.append(average(losses)) 
-        writer.add_scalar("AvgLoss/train", losses_avg[-1][-1], epoch)
-        writer.add_scalar("Loss_recons_t/train", losses[-1][1], epoch)
-        writer.add_scalar("Loss_recons_v/train", losses[-1][2], epoch)
-        logger.info(f'Epoch[{epoch + 1}/{n_epochs}], Loss: {losses_avg[-1]}')
-    
+        logger.info(f'Finshed Epoch[{epoch + 1}/{n_epochs}]\nAverage Loss Summary:\n{losses_avg[-1]}\n')
+        
+        # calculate loss on validation
+        _, _, valid_losses_avg = evaluate_validation(model_v,
+                            model_t, 
+                            split_path = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments/valid.split.pkl', 
+                            coefs=loss_coefs, 
+                            active_losses=activated_losses)
+
+        # write train and valid loss to tensorboard
+        for loss_idx, loss_type in zip(range(len(losses[0])),losses[0]):
+            writer.add_scalar(f'{loss_type}/train', losses_avg[-1][loss_idx], epoch)
+            writer.add_scalar(f'{loss_type}/valid', valid_losses_avg[loss_idx], epoch)
+                       
     writer.flush()
     return model_v, model_t, losses, losses_avg
 
@@ -357,6 +357,8 @@ if __name__ == '__main__':
     parser.add_argument('--init_model_path', default = None, help = 'if None, a new model will be instantiated. If path is provided, additional training will be done on the existing model.')
 
     # active losses
+    parser.add_argument('--activate_all_losses', action='store_true', help = 'enables training using all the losses below')
+
     parser.add_argument('--activate_reconst_t', action='store_true', help = 'enables training using text reconst loss')
     parser.add_argument('--activate_reconst_v', action='store_true', help = 'enables training using video reconst loss')
     
@@ -372,19 +374,19 @@ if __name__ == '__main__':
     parser.add_argument('--loss_criterion', default = 'mse') # MSELoss
     
     # lr step size
-    parser.add_argument('--lr_step_size_min', type = int, default = 1, help = 'lr schedule: step size lower bound')
+    parser.add_argument('--lr_step_size_min', type = int, default = 10, help = 'lr schedule: step size lower bound')
     parser.add_argument('--lr_step_size_max', type = int, default = 10, help = 'lr schedule: step size upper bound')
     
     # lr gamma
     parser.add_argument('--lr_gamma', type = float, default = 0.1, help = 'lr schedule: gamma')
     
     # lr
-    parser.add_argument('--lr_min', type = float, default = 0.0001, help = 'learning rate lower bound')
+    parser.add_argument('--lr_min', type = float, default = 0.01, help = 'learning rate lower bound')
     parser.add_argument('--lr_max', type = float, default = 0.01, help = 'learning rate upper bound')
     
     # weight decay
-    parser.add_argument('--weight_decay_min', type = float, default = 0.0001, help = 'weight decay lower bound')
-    parser.add_argument('--weight_decay_max', type = float, default = 0.1, help = 'weight decay upper bound')
+    parser.add_argument('--weight_decay_min', type = float, default = 0.0004, help = 'weight decay lower bound')
+    parser.add_argument('--weight_decay_max', type = float, default = 0.0004, help = 'weight decay upper bound')
     
     # batch size
     parser.add_argument('--batch_size', type = int, default = 64, help = 'batch size')
@@ -406,7 +408,7 @@ if __name__ == '__main__':
     parser.add_argument('--video_feats_dir', default = 'feats/video/r2plus1d_resnet50_kinetics400')
     parser.add_argument('--text_feats_path', default = 'feats/text/universal/sentence_feats.pkl')
     parser.add_argument('--train_split_path', default = 'train.split.pkl')
-    parser.add_argument('--output_path', default = 'output')
+    parser.add_argument('--output_path', default = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output')
 
     args = parser.parse_args()
     
@@ -439,7 +441,7 @@ if __name__ == '__main__':
         
     repo_dir = args.repo_dir
     train_split_path = f'{repo_dir}/{args.train_split_path}'
-    output_path = f'{repo_dir}/{args.output_path}'
+    output_path = args.output_path
     v_feats_dir = f'{repo_dir}/{args.video_feats_dir}'
     t_feats_path = f'{repo_dir}/{args.text_feats_path}'
     
@@ -459,12 +461,14 @@ if __name__ == '__main__':
     loss_criterion = args.loss_criterion
 
     # joint_active,reconst_v_active,reconst_t_active,cross_v_active,cross_t_active,cycle_v_active,cycle_t_active
-    activated_losses = (args.activate_joint, args.activate_reconst_v, args.activate_reconst_t, args.activate_cross_v, args.activate_cross_t, args.activate_cycle_v, args.activate_cycle_t)
+    if args.activate_all_losses:
+        activated_losses = (True, True, True, True, True, True, True)
+    else:
+        activated_losses = (args.activate_joint, args.activate_reconst_v, args.activate_reconst_t, args.activate_cross_v, args.activate_cross_t, args.activate_cycle_v, args.activate_cycle_t)
     
     weight_decay = (weight_decay_min+weight_decay_max)/2
     lr_step_size = (lr_step_size_min+lr_step_size_max)/2
     lr = (lr_min+lr_max)/2
-    print(lr, lr_step_size, weight_decay)
     
     validation_loss = evaluate_model(lr,lr_step_size, weight_decay)
     print(validation_loss)
