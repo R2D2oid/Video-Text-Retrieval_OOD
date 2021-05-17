@@ -67,7 +67,7 @@ class TempuckeyVideoSentencePairsDataset(Dataset):
         for trnsfrm in self.transform:
             sample = trnsfrm(sample, dataset_stats=self.dataset_stats)
         
-        sample = {'video': torch.tensor(sample['video']).float(), 'sent': torch.tensor(sample['sent']).float()}
+        sample = {'id': idx_name ,'video': torch.tensor(sample['video']).float(), 'sent': torch.tensor(sample['sent']).float()}
         
         return sample
 
@@ -154,7 +154,7 @@ def remove_invalid_video_sentence_features(vids, caps):
     diff = caps_k - caps_k.intersection(vids_k)
     for k in diff:
         del caps[k]
-    
+
     assert len(vids)==len(caps), 'vids and caps should correspond!'
     
     return vids, caps
