@@ -45,12 +45,41 @@ def encode_data(split_path, model_v, mode_t):
     embeddings_v = torch.from_numpy(np.array(embeddings_v)).squeeze()
     embeddings_t = torch.from_numpy(np.array(embeddings_t)).squeeze()
     assert len(ids) == len(embeddings_t) and len(ids) == len(embeddings_v)
-    
+
     return ids, embeddings_v, embeddings_t    
     
+
+def get_metrics(mat):
+    """
+    Input Parameter:
+        mat: N x N matrix of Video-to-Text (or Text-to-Video) distance in the embedding space
+    Output:
+        [recall@1, recall@5, recall@10, MeanRank, MedianRank]
+    """
+    N = mat.shape[0]
+
+    # obtain the rank of i_th text embedding among all embeddings
+    # that is the rank of the corresponding text for the given video
+    ranks = np.array([np.where(np.argsort(mat[i]) == i)[0][0] for i in range(N)])
+        
+    recall_1  = 100.0 * len(np.where(ranks < 1)[0])/N
+    recall_5  = 100.0 * len(np.where(ranks < 5)[0])/N
+    recall_10 = 100.0 * len(np.where(ranks < 10)[0])/N
+    mean_rank = ranks.mean() + 1
+    med_rank = np.floor(np.median(ranks)) + 1
     
-def calc_cosine_distance(embeddings_v, embeddings_t):
-    return np.dot(embeddings_t, embeddings_v.T)
+    metrics = [recall_1, recall_5, recall_10, mean_rank, med_rank]
+    metrics = [round(m,2) for m in metrics]
+    
+    return metrics
+
+
+def calc_cosine_distance(embs_mode1, embs_mode2):      
+    return np.dot(embs_mode1, embs_mode2.T)
+
+
+def calc_l2_distance(embs_mode1, embs_mode2):
+    return np.linalg.norm(embs_mode1[:, None, :] - embs_mode2[None, :, :], axis=-1)
 
 
 def load_model(model_path, n_feats):
@@ -121,5 +150,14 @@ if __name__ == '__main__':
     model_t = load_model(model_t_path, args.t_num_feats)
     
     ids, embs_v, embs_t = encode_data(test_split_path, model_v, model_t)
-    dist_matrix = calc_cosine_distance(embs_v, embs_t)
+    
+    dist_matrix_v2t = calc_l2_distance(embs_v, embs_t)
+    metrics_v2t = get_metrics(dist_matrix_v2t)
+    
+    dist_matrix_t2v = calc_l2_distance(embs_t, embs_v)
+    metrics_t2v = get_metrics(dist_matrix_t2v)
+
+    print(metrics_v2t)
+    print(metrics_t2v)
+
     
