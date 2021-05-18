@@ -54,19 +54,19 @@ class TempuckeyVideoSentencePairsDataset(Dataset):
         # ex. 312_TRIPPING_2017-11-16-phi-wpg-home_00_17_33.052000_to_00_17_39.125000.mp4_00:17:46.532000_00:17:52.171000
         idx_name = self.split_ids[idx] 
         
-        vid_feat = self.videos[idx_name]
-        snt_feat = self.sents[idx_name].reshape(1,-1)
-        
-        vid_feat = unify_embedding_length(vid_feat, self.video_feat_seq_len)
-        snt_feat = unify_embedding_length(snt_feat, self.sent_feat_seq_len)
-        
-        self.dataset_stats = self.get_dataset_mean_std()
-        
-        sample = {'video': vid_feat, 'sent': snt_feat}
+        vid_feat = self.videos[idx_name].squeeze()
+        snt_feat = self.sents[idx_name].squeeze()
 
-        for trnsfrm in self.transform:
-            sample = trnsfrm(sample, dataset_stats=self.dataset_stats)
+#         vid_feat = unify_embedding_length(vid_feat, self.video_feat_seq_len)
+#         snt_feat = unify_embedding_length(snt_feat, self.sent_feat_seq_len)
         
+        sample = {'id': idx_name, 'video': torch.tensor(vid_feat).float(), 'sent': torch.tensor(snt_feat).float()}
+
+#         sample = {'id': idx_name, 'video': vid_feat, 'sent': snt_feat}
+#         self.dataset_stats = self.get_dataset_mean_std()
+#         for trnsfrm in self.transform:
+#             sample = trnsfrm(sample, dataset_stats=self.dataset_stats)
+
         sample = {'id': idx_name ,'video': torch.tensor(sample['video']).float(), 'sent': torch.tensor(sample['sent']).float()}
         
         return sample
@@ -123,19 +123,19 @@ class ToTensor_VideoSentencePair(object):
     def __call__(self, sample, **args):
         return {'video': torch.tensor(sample['video']), 'sent': torch.tensor(sample['sent'])}
     
-def unify_embedding_length(emb, target_len):
-    '''
-    Unify feat size to ensure all embeddings are n_feats x T
-        if embedding is smaller, then augment it with zeros at the end
-        if embedding is larger, crop the extra rows
-    '''
-    emb_len, num_feats = emb.shape
-    if emb_len < target_len:
-        len_diff = target_len - emb_len
-        zero_padding = np.zeros([len_diff, num_feats])
-        return np.vstack((emb, zero_padding))
-    else:
-        return np.array(emb[0:target_len])
+# def unify_embedding_length(emb, target_len):
+#     '''
+#     Unify feat size to ensure all embeddings are n_feats x T
+#         if embedding is smaller, then augment it with zeros at the end
+#         if embedding is larger, crop the extra rows
+#     '''
+#     emb_len, num_feats = emb.shape
+#     if emb_len < target_len:
+#         len_diff = target_len - emb_len
+#         zero_padding = np.zeros([len_diff, num_feats])
+#         return np.vstack((emb, zero_padding))
+#     else:
+#         return np.array(emb[0:target_len])
     
 def remove_invalid_video_sentence_features(vids, caps):
     '''

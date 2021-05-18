@@ -11,7 +11,7 @@ class AE(nn.Module):
         self.encoder_ = nn.Sequential(
             nn.Linear(n_feat, int(n_feat/2)),
             nn.Dropout(0.2),
-#             nn.BatchNorm1d(n_feat/2),
+            nn.BatchNorm1d(int(n_feat/2)),
             nn.ReLU(True),
             nn.Linear(int(n_feat/2), int(n_feat/2)),
             nn.ReLU(True),
@@ -34,7 +34,7 @@ class AE(nn.Module):
             nn.ReLU(True),
             nn.Linear(int(n_feat/2), int(n_feat/2)),
             nn.ReLU(True),
-#             nn.BatchNorm1d(n_feat/2),
+            nn.BatchNorm1d(int(n_feat/2)),
             nn.Dropout(0.2),
             nn.Linear(int(n_feat/2), n_feat)
         )
