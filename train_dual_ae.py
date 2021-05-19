@@ -9,13 +9,11 @@ from bayes_opt import BayesianOptimization
 import logging
 from datetime import datetime as dt
 import utilities as utils
-# from layers.AEwithAttention import AEwithAttention
 from layers.AE import AE
 from data_provider import TempuckeyVideoSentencePairsDataset as TempuckeyDataset
 from data_provider import Normalize_VideoSentencePair
 
 from numpy import linalg
-import pdb
 
 # torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
@@ -36,12 +34,17 @@ logger = logging.getLogger()
     
 ################################################
 
-def evaluate_model(lr, lr_step_size, weight_decay):
+def evaluate_model(lr, lr_step_size, weight_decay, batch_size_exp):
   
-    torch.multiprocessing.set_start_method('spawn')
-
+    # use batch_size provided by bayes_opt as 2**int(value)
+    batch_size = int(np.power(2,int(batch_size_exp)))
+    
+    dl_params = {'batch_size': batch_size,
+                 'shuffle': False,
+                 'num_workers': 1}
+    
     # display experiment info
-    exp_info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L)
+    exp_info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
     logger.info(exp_info)
     
     # train data loader
@@ -49,16 +52,20 @@ def evaluate_model(lr, lr_step_size, weight_decay):
     
     # train 
     torch.set_grad_enabled(True)
-    model_v, model_t, train_losses, train_losses_avg = train_model(train_split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, coefs = loss_coefs, active_losses = activated_losses)
+    model_v, model_t, train_losses, train_losses_avg = train_model(train_split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, coefs = loss_coefs, active_losses = activated_losses)
+    
+    if model_v is None:
+        print('Mode colapse! Moving on to the next round of Bayesian Optimization!')
+        return -10.0
     
     # valid data loader
     valid_split_path = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments/valid.split.pkl'
     
     # calculate loss on validation
-    valid_loss, valid_losses, valid_losses_avg = evaluate_validation(model_v, model_t, valid_split_path, coefs=loss_coefs, active_losses=activated_losses)
+    valid_loss, valid_losses, valid_losses_avg = evaluate_validation(model_v, model_t, valid_split_path, dl_params, coefs=loss_coefs, active_losses=activated_losses)
     
     # log experiment meta data 
-    exp_dir, exp_name = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L)
+    exp_dir, exp_name = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
     
     # save trained model, training losses, and validation losses
     save_experiment(model_v, model_t, train_losses, train_losses_avg, valid_losses, valid_losses_avg, exp_dir, exp_name)
@@ -84,23 +91,23 @@ def save_experiment(model_v, model_t, train_losses, train_losses_avg, valid_loss
     
 ########################################
 
-def log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L):
+def log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size):
     import uuid
     random_hash = uuid.uuid4().hex
 
-    exp_name = f'experiment_{lr}_{lr_step_size}_{lr_gamma}_{weight_decay}_{n_epochs}_{L}x{n_feats_t}_{T}x{n_feats_v}_{random_hash}'
+    exp_name = f'experiment_{lr}_{lr_step_size}_{lr_gamma}_{weight_decay}_{batch_size}_{n_epochs}_{L}x{n_feats_t}_{T}x{n_feats_v}_{random_hash}'
     exp_dir = f'{output_path}/experiments/{exp_name}'
     utils.create_dir_if_not_exist(exp_dir)
         
     info_path = f'{exp_dir}/experiment_info.txt'
-    info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L)
+    info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
     utils.dump_textfile(info, info_path)
     
     return exp_dir, exp_name
 
 ########################################
 
-def get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L):
+def get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size):
     
     info = []
     
@@ -109,6 +116,7 @@ def get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_fe
     info.append(f'lr: {lr}')
     info.append(f'lr_step_size: {lr_step_size}')
     info.append(f'weight_decay: {weight_decay}')
+    info.append(f'batch_size: {batch_size}')
 
     return info
 
@@ -184,11 +192,11 @@ def average(losses):
 
 ################################
 
-def evaluate_validation(model_v, model_t, split_path, coefs, active_losses):
+def evaluate_validation(model_v, model_t, split_path, dl_params, coefs, active_losses):
     
-    # valid dataloader
+    # load validation data
     ids_valid = utils.load_picklefile(split_path)
-    dataset_valid = TempuckeyDataset(v_feats_dir, t_feats_path, ids_valid, video_feat_seq_len=T, sent_feat_seq_len=L, transform=[Normalize_VideoSentencePair()])
+    dataset_valid = TempuckeyDataset(v_feats_dir, t_feats_path, ids_valid, video_feat_seq_len=T, sent_feat_seq_len=L, transform=None)
     
     data_loader = torch.utils.data.DataLoader(dataset_valid, **dl_params)
     
@@ -198,6 +206,7 @@ def evaluate_validation(model_v, model_t, split_path, coefs, active_losses):
     model_v.eval()
     model_t.eval()
     
+    # run trained model on validation
     for sample in data_loader:
         v = sample['video']
         t = sample['sent']
@@ -205,6 +214,14 @@ def evaluate_validation(model_v, model_t, split_path, coefs, active_losses):
         with torch.no_grad():
             loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses, target = target_tensor)
             losses.append([l.item() if isinstance(l,torch.Tensor) else l for l in loss])
+            vv = model_v.encoder(v)
+            t1 = vv[0]
+            t2 = vv[1]
+            if bool(torch.all(t1.eq(t2))):
+                print('vv[0]: ', vv[0])
+                print('vv[1]: ', vv[1])
+                print('Mode Collapse! :(')
+                return None,None,None
 
     losses_avg = average(losses)
     loss = -losses_avg['total']
@@ -217,7 +234,7 @@ def evaluate_validation(model_v, model_t, split_path, coefs, active_losses):
 def instantiate_loss_criterion(loss_criterion):
     if loss_criterion == 'cosine':
         # target_tensor = torch.Tensor(1) # use 1 to train for bringing together corresponding (positive) vectors
-        # target_tensor = torch.Tensor(-1) # use -1 to train for pushong apart dissimilar (negative) vectors
+        # target_tensor = torch.Tensor(-1) # use -1 to train for pushing apart dissimilar (negative) vectors
         criterion = nn.CosineEmbeddingLoss()
         # the cosine embedding loss takes a target y=1 for training positive (similar) vectors and y=-1 for training dissimilar (negative) vectors
         target_tensor = torch.Tensor(1)
@@ -229,14 +246,14 @@ def instantiate_loss_criterion(loss_criterion):
 
 ########################################
 
-def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, coefs, active_losses):   
+def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, coefs, active_losses):   
              
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # dataloader
     ids_train = utils.load_picklefile(split_path)
-    dataset_train = TempuckeyDataset(v_feats_dir, t_feats_path, ids_train, video_feat_seq_len=T, sent_feat_seq_len=L, transform=[Normalize_VideoSentencePair()])
- 
+    dataset_train = TempuckeyDataset(v_feats_dir, t_feats_path, ids_train, video_feat_seq_len=T, sent_feat_seq_len=L, transform=None)
+     
     data_loader = torch.utils.data.DataLoader(dataset_train, **dl_params)
     
     num_samples = data_loader.__len__()
@@ -244,7 +261,7 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
     ### create AE model for video and text encoding
     model_v = AE(n_feats_v)
     model_t = AE(n_feats_t)
-    
+
     
     if load_existing_model:
         model_v_file = open(model_v_path, 'rb')
@@ -284,7 +301,6 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
     
     losses_avg = []
 
-    import pdb
     criterion, target_tensor = instantiate_loss_criterion(loss_criterion)
 
     flag = True
@@ -334,9 +350,14 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
         _, _, valid_losses_avg = evaluate_validation(model_v,
                             model_t, 
                             split_path = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments/valid.split.pkl', 
-                            coefs=loss_coefs, 
-                            active_losses=activated_losses)
+                            dl_params = dl_params,
+                            coefs = loss_coefs, 
+                            active_losses = activated_losses)
 
+        if valid_losses_avg is None:
+            print('Mode colapse! :( \nMove on from this round of training!')
+            return None, None, None, None
+        
         # write train and valid loss to tensorboard
         for loss_idx, loss_type in zip(range(len(losses[0])),losses[0]):
             writer.add_scalar(f'{loss_type}/train', losses_avg[-1][loss_idx], epoch)
@@ -348,10 +369,16 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
 ########################################
 
 if __name__ == '__main__':
+    
+#     try:
+#         torch.multiprocessing.set_start_method("spawn")
+#     except RuntimeError:
+#         pass
+
     ### python3 train.py --n_epochs 3 --t_num_feats 512 --v_num_feats 512 --activate_reconst_t --activate_reconst_v --loss_criterion mse --v_feat_len 4 --t_feat_len 1
 
     parser = argparse.ArgumentParser ()
-    parser.add_argument('--n_epochs', type = int, default = 10, help = 'number of iterations')
+    parser.add_argument('--n_epochs', type = int, default = 20, help = 'number of iterations')
     parser.add_argument('--n_train_samples', type = int, default = None, help = 'number of training samples')
     
     parser.add_argument('--init_model_path', default = None, help = 'if None, a new model will be instantiated. If path is provided, additional training will be done on the existing model.')
@@ -374,23 +401,24 @@ if __name__ == '__main__':
     parser.add_argument('--loss_criterion', default = 'mse') # MSELoss
     
     # lr step size
-    parser.add_argument('--lr_step_size_min', type = int, default = 10, help = 'lr schedule: step size lower bound')
+    parser.add_argument('--lr_step_size_min', type = int, default = 1, help = 'lr schedule: step size lower bound')
     parser.add_argument('--lr_step_size_max', type = int, default = 10, help = 'lr schedule: step size upper bound')
     
     # lr gamma
     parser.add_argument('--lr_gamma', type = float, default = 0.1, help = 'lr schedule: gamma')
     
     # lr
-    parser.add_argument('--lr_min', type = float, default = 0.01, help = 'learning rate lower bound')
-    parser.add_argument('--lr_max', type = float, default = 0.01, help = 'learning rate upper bound')
+    parser.add_argument('--lr_min', type = float, default = 0.00001, help = 'learning rate lower bound')
+    parser.add_argument('--lr_max', type = float, default = 0.001, help = 'learning rate upper bound')
     
     # weight decay
-    parser.add_argument('--weight_decay_min', type = float, default = 0.0004, help = 'weight decay lower bound')
-    parser.add_argument('--weight_decay_max', type = float, default = 0.0004, help = 'weight decay upper bound')
+    parser.add_argument('--weight_decay_min', type = float, default = 0.00001, help = 'weight decay lower bound')
+    parser.add_argument('--weight_decay_max', type = float, default = 0.001, help = 'weight decay upper bound')
     
     # batch size
-    parser.add_argument('--batch_size', type = int, default = 64, help = 'batch size')
-
+    parser.add_argument('--batch_size_exp_min', type = int, default = 5, help = 'batch size exponent lower bound; batch_size=2**n')
+    parser.add_argument('--batch_size_exp_max', type = int, default = 7, help = 'batch size exponent upper bound; batch_size=2**n')
+    
     # num feats
     parser.add_argument('--t_num_feats', type = int, default = 512, help = 'number of feats in each vector')
     parser.add_argument('--v_num_feats', type = int, default = 2048, help = 'number of feats in each vector')
@@ -400,8 +428,8 @@ if __name__ == '__main__':
     parser.add_argument('--v_feat_len', type = int, default = 1, help = 'length of feat vector')
     
     # bayesian optimization parameters
-    parser.add_argument('--bayes_n_iter', type = int, default = 1, help = 'bayesian optimization num iterations')
-    parser.add_argument('--bayes_init_points', type = int, default = 1, help = 'bayesian optimization init points')
+    parser.add_argument('--bayes_n_iter', type = int, default = 25, help = 'bayesian optimization num iterations')
+    parser.add_argument('--bayes_init_points', type = int, default = 5, help = 'bayesian optimization init points')
     
     # io params
     parser.add_argument('--repo_dir', default = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments')
@@ -425,7 +453,8 @@ if __name__ == '__main__':
     weight_decay_min = args.weight_decay_min
     weight_decay_max = args.weight_decay_max
     
-    batch_size = args.batch_size
+    batch_size_exp_min = args.batch_size_exp_min
+    batch_size_exp_max = args.batch_size_exp_max
     
     n_epochs = args.n_epochs
     n_train_samples = args.n_train_samples
@@ -434,10 +463,6 @@ if __name__ == '__main__':
     n_feats_v = args.v_num_feats
     T = args.v_feat_len
     L = args.t_feat_len
-      
-    dl_params = {'batch_size': batch_size,
-        'shuffle': False,
-        'num_workers': 1}
         
     repo_dir = args.repo_dir
     train_split_path = f'{repo_dir}/{args.train_split_path}'
@@ -466,24 +491,17 @@ if __name__ == '__main__':
     else:
         activated_losses = (args.activate_joint, args.activate_reconst_v, args.activate_reconst_t, args.activate_cross_v, args.activate_cross_t, args.activate_cycle_v, args.activate_cycle_t)
     
-    weight_decay = (weight_decay_min+weight_decay_max)/2
-    lr_step_size = (lr_step_size_min+lr_step_size_max)/2
-    lr = (lr_min+lr_max)/2
-    
-    validation_loss = evaluate_model(lr,lr_step_size, weight_decay)
-    print(validation_loss)
-    
-#     # bounds of parameter space
-#     pbounds = {'lr': (lr_min, lr_max), 'lr_step_size': (lr_step_size_min, lr_step_size_max), 'weight_decay':(weight_decay_min, weight_decay_max)}
+    # bounds of parameter space
+    pbounds = {'lr': (lr_min, lr_max), 'lr_step_size': (lr_step_size_min, lr_step_size_max), 'weight_decay':(weight_decay_min, weight_decay_max), 'batch_size_exp': (batch_size_exp_min, batch_size_exp_max)}
 
-#     optimizer = BayesianOptimization(
-#         f=evaluate_model,
-#         pbounds=pbounds,
-#         random_state=42,
-#     )
+    optimizer = BayesianOptimization(
+        f=evaluate_model,
+        pbounds=pbounds,
+        random_state=42,
+    )
 
-#     optimizer.maximize(
-#         init_points=bayes_init_points,
-#         n_iter=bayes_n_iter,
-#     )
+    optimizer.maximize(
+        init_points=bayes_init_points,
+        n_iter=bayes_n_iter,
+    )
 
