@@ -55,7 +55,8 @@ def evaluate_model(lr, lr_step_size, weight_decay, batch_size_exp):
     model_v, model_t, train_losses, train_losses_avg = train_model(dataloader_train, dataloader_valid, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, coefs = loss_coefs, active_losses = activated_losses)
     
     if model_v is None:
-        print('Mode colapse! Moving on to the next round of Bayesian Optimization!')
+        # model_v and model_t are returned as None if mode collapse occurs during training
+        print('Moving on to the next round of Bayesian Optimization!')
         return -10.0
 
     # calculate loss on validation
@@ -216,11 +217,7 @@ def evaluate_validation(data_loader, model_v, model_t, coefs, active_losses):
             loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses, target = target_tensor)
             losses.append([l.item() if isinstance(l,torch.Tensor) else l for l in loss])
             vv = model_v.encoder(v)
-            t1 = vv[0]
-            t2 = vv[1]
-            if bool(torch.all(t1.eq(t2))):
-                print('vv[0]: ', vv[0])
-                print('vv[1]: ', vv[1])
+            if bool(torch.all(vv[0].eq(vv[1]))):
                 print('Mode Collapse! :(')
                 return None,None,None
 
@@ -257,7 +254,7 @@ def get_data_loader(split_path, v_feats_dir, t_feats_path, dl_params):
 
 def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, coefs, active_losses):   
              
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
     num_samples = data_loader_train.__len__()
     
@@ -275,9 +272,6 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
         model_v.load_state_dict(model_v_sd)
         model_t.load_state_dict(model_t_sd)
 
-    model_v.train()
-    model_t.train()
-    
     model_v.to(device)
     model_t.to(device)
 
@@ -306,9 +300,12 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
     criterion, target_tensor = instantiate_loss_criterion(loss_criterion)
 
     flag = True
-    
+
     ### train the model
     for epoch in range(n_epochs):
+        model_v.train()
+        model_t.train()
+        
         counter = 1    
         
         losses = [['joint', 'recons_v', 'recons_t', 'cross_v', 'cross_t', 'cycle_v', 'cycle_t', 'total']]
@@ -356,7 +353,7 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
                             active_losses = activated_losses)
 
         if valid_losses_avg is None:
-            print('Mode colapse! :( \nMove on from this round of training!')
+            # Mode collapse! Move on from this round of training!
             return None, None, None, None
         
         # write train and valid loss to tensorboard
@@ -404,11 +401,11 @@ if __name__ == '__main__':
     parser.add_argument('--lr_gamma', type = float, default = 0.1, help = 'lr schedule: gamma')
     
     # lr
-    parser.add_argument('--lr_min', type = float, default = 0.00001, help = 'learning rate lower bound')
+    parser.add_argument('--lr_min', type = float, default = 0.0001, help = 'learning rate lower bound')
     parser.add_argument('--lr_max', type = float, default = 0.001, help = 'learning rate upper bound')
     
     # weight decay
-    parser.add_argument('--weight_decay_min', type = float, default = 0.00001, help = 'weight decay lower bound')
+    parser.add_argument('--weight_decay_min', type = float, default = 0.0001, help = 'weight decay lower bound')
     parser.add_argument('--weight_decay_max', type = float, default = 0.001, help = 'weight decay upper bound')
     
     # batch size
