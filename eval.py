@@ -26,6 +26,9 @@ def encode_data(data_loader, model_v, model_t):
     embeddings_t = []
     embeddings_v = []
     
+    model_v.eval()
+    model_t.eval()
+    
     for sample in data_loader:
         i = sample['id']
         v = sample['video']
