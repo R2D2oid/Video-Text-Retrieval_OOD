@@ -12,8 +12,7 @@ import utilities as utils
 from layers.AE import AE
 from data_provider import TempuckeyVideoSentencePairsDataset as TempuckeyDataset
 from data_provider import Normalize_VideoSentencePair
-
-from numpy import linalg
+from eval import encode_data, calc_l2_distance, get_metrics 
 
 # torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
@@ -23,7 +22,7 @@ writer = SummaryWriter('runs/')
 # init logging
 logfile = 'logs/logfile_{}.log'.format(dt.now())
 logformat = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-loglevel = 10 ## levels: NOTSET = 0 | DEBUG = 10 | INFO = 20 | WARNING = 30 | ERROR = 40 | CRITICAL = 50
+loglevel = 40 ## levels: NOTSET = 0 | DEBUG = 10 | INFO = 20 | WARNING = 30 | ERROR = 40 | CRITICAL = 50
 logging.basicConfig (
     filename = logfile.format (dt.now().date()),
     level = loglevel,
@@ -47,22 +46,20 @@ def evaluate_model(lr, lr_step_size, weight_decay, batch_size_exp):
     exp_info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
     logger.info(exp_info)
     
-    # train data loader
-    train_split_path = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments/train.split.pkl'
-    
+    # get data loaders for train and valid sets
+    dataloader_train = get_data_loader(train_split_path, v_feats_dir, t_feats_path, dl_params)
+    dataloader_valid = get_data_loader(valid_split_path, v_feats_dir, t_feats_path, dl_params)
+
     # train 
     torch.set_grad_enabled(True)
-    model_v, model_t, train_losses, train_losses_avg = train_model(train_split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, coefs = loss_coefs, active_losses = activated_losses)
+    model_v, model_t, train_losses, train_losses_avg = train_model(dataloader_train, dataloader_valid, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, coefs = loss_coefs, active_losses = activated_losses)
     
     if model_v is None:
         print('Mode colapse! Moving on to the next round of Bayesian Optimization!')
         return -10.0
-    
-    # valid data loader
-    valid_split_path = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments/valid.split.pkl'
-    
+
     # calculate loss on validation
-    valid_loss, valid_losses, valid_losses_avg = evaluate_validation(model_v, model_t, valid_split_path, dl_params, coefs=loss_coefs, active_losses=activated_losses)
+    valid_loss, valid_losses, valid_losses_avg = evaluate_validation(dataloader_valid, model_v, model_t, coefs=loss_coefs, active_losses=activated_losses)
     
     # log experiment meta data 
     exp_dir, exp_name = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
@@ -71,11 +68,22 @@ def evaluate_model(lr, lr_step_size, weight_decay, batch_size_exp):
     save_experiment(model_v, model_t, train_losses, train_losses_avg, valid_losses, valid_losses_avg, exp_dir, exp_name)
     logger.info(f'saved model_t, model_v, training/validation loss to {exp_dir}')
 
-    # validation loss returned for bayesian parameter optimization 
-    return valid_loss
+    v2t_metrics = validation_metrics(dataloader_valid, model_v, model_t)
+    recall_at_1 = v2t_metrics[0]
+    
+    return recall_at_1
 
 ########################################
 
+def validation_metrics(data_loader, model_v, model_t):
+    _, embs_v, embs_t = encode_data(data_loader, model_v, model_t)
+    
+    dist_matrix_v2t = calc_l2_distance(embs_v, embs_t)
+    v2t_metrics = get_metrics(dist_matrix_v2t)
+
+    return v2t_metrics
+
+########################################
 def save_experiment(model_v, model_t, train_losses, train_losses_avg, valid_losses, valid_losses_avg, exp_dir, exp_name):
     # save models
     torch.save(model_v.state_dict(), f'{exp_dir}/model_v_{exp_name}.sd')
@@ -192,14 +200,7 @@ def average(losses):
 
 ################################
 
-def evaluate_validation(model_v, model_t, split_path, dl_params, coefs, active_losses):
-    
-    # load validation data
-    ids_valid = utils.load_picklefile(split_path)
-    dataset_valid = TempuckeyDataset(v_feats_dir, t_feats_path, ids_valid, video_feat_seq_len=T, sent_feat_seq_len=L, transform=None)
-    
-    data_loader = torch.utils.data.DataLoader(dataset_valid, **dl_params)
-    
+def evaluate_validation(data_loader, model_v, model_t, coefs, active_losses):
     losses = [['joint', 'recons_v', 'recons_t', 'cross_v', 'cross_t', 'cycle_v', 'cycle_t', 'total']]
     criterion, target_tensor = instantiate_loss_criterion(loss_criterion)
 
@@ -246,23 +247,24 @@ def instantiate_loss_criterion(loss_criterion):
 
 ########################################
 
-def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, coefs, active_losses):   
+def get_data_loader(split_path, v_feats_dir, t_feats_path, dl_params):
+    ids = utils.load_picklefile(split_path)
+    dataset = TempuckeyDataset(v_feats_dir, t_feats_path, ids, video_feat_seq_len=T, sent_feat_seq_len=L, transform=None)
+    data_loader = torch.utils.data.DataLoader(dataset, **dl_params)
+    return data_loader
+
+########################################
+
+def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, coefs, active_losses):   
              
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
-    # dataloader
-    ids_train = utils.load_picklefile(split_path)
-    dataset_train = TempuckeyDataset(v_feats_dir, t_feats_path, ids_train, video_feat_seq_len=T, sent_feat_seq_len=L, transform=None)
-     
-    data_loader = torch.utils.data.DataLoader(dataset_train, **dl_params)
     
-    num_samples = data_loader.__len__()
+    num_samples = data_loader_train.__len__()
     
     ### create AE model for video and text encoding
     model_v = AE(n_feats_v)
     model_t = AE(n_feats_t)
 
-    
     if load_existing_model:
         model_v_file = open(model_v_path, 'rb')
         model_t_file = open(model_t_path, 'rb')
@@ -311,7 +313,7 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
         
         losses = [['joint', 'recons_v', 'recons_t', 'cross_v', 'cross_t', 'cycle_v', 'cycle_t', 'total']]
         
-        for sample in data_loader:
+        for sample in data_loader_train:
             v = sample['video']
             t = sample['sent']
 
@@ -347,10 +349,9 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
         logger.info(f'Finshed Epoch[{epoch + 1}/{n_epochs}]\nAverage Loss Summary:\n{losses_avg[-1]}\n')
         
         # calculate loss on validation
-        _, _, valid_losses_avg = evaluate_validation(model_v,
+        _, _, valid_losses_avg = evaluate_validation(data_loader_valid, 
+                            model_v,
                             model_t, 
-                            split_path = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments/valid.split.pkl', 
-                            dl_params = dl_params,
                             coefs = loss_coefs, 
                             active_losses = activated_losses)
 
@@ -370,11 +371,6 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
 
 if __name__ == '__main__':
     
-#     try:
-#         torch.multiprocessing.set_start_method("spawn")
-#     except RuntimeError:
-#         pass
-
     ### python3 train.py --n_epochs 3 --t_num_feats 512 --v_num_feats 512 --activate_reconst_t --activate_reconst_v --loss_criterion mse --v_feat_len 4 --t_feat_len 1
 
     parser = argparse.ArgumentParser ()
@@ -435,7 +431,8 @@ if __name__ == '__main__':
     parser.add_argument('--repo_dir', default = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments')
     parser.add_argument('--video_feats_dir', default = 'feats/video/r2plus1d_resnet50_kinetics400')
     parser.add_argument('--text_feats_path', default = 'feats/text/universal/sentence_feats.pkl')
-    parser.add_argument('--train_split_path', default = 'train.split.pkl')
+    parser.add_argument('--train_split_path', default = 'train.split.pkl')    
+    parser.add_argument('--valid_split_path', default = 'valid.split.pkl')
     parser.add_argument('--output_path', default = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output')
 
     args = parser.parse_args()
@@ -466,6 +463,7 @@ if __name__ == '__main__':
         
     repo_dir = args.repo_dir
     train_split_path = f'{repo_dir}/{args.train_split_path}'
+    valid_split_path = f'{repo_dir}/{args.valid_split_path}'
     output_path = args.output_path
     v_feats_dir = f'{repo_dir}/{args.video_feats_dir}'
     t_feats_path = f'{repo_dir}/{args.text_feats_path}'
