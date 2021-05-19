@@ -12,7 +12,7 @@ import math
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
-def encode_data(split_path, model_v, mode_t):
+def encode_data(data_loader, model_v, model_t):
     '''
     Input Parameters:
         split_path: data split path for data loader
@@ -21,10 +21,7 @@ def encode_data(split_path, model_v, mode_t):
     Returns
         list of ids, encoded video embeddeings, encoded text embeddings
     '''
-    data_ids = utils.load_picklefile(split_path)
-    dataset = TempuckeyDataset(v_feats_dir, t_feats_path, data_ids, video_feat_seq_len=1, sent_feat_seq_len=1, transform=[Normalize_VideoSentencePair()])
-    data_loader = torch.utils.data.DataLoader(dataset, **dl_params)
-    
+   
     ids = []
     embeddings_t = []
     embeddings_v = []
@@ -112,9 +109,7 @@ if __name__ == '__main__':
     parser.add_argument('--data_dir', default = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments')
     parser.add_argument('--video_feats_dir', default = 'feats/video/r2plus1d_resnet50_kinetics400')
     parser.add_argument('--text_feats_path', default = 'feats/text/universal/sentence_feats.pkl')
-    parser.add_argument('--train_split_path', default = 'train.split.pkl')
-    parser.add_argument('--valid_split_path', default = 'valid.split.pkl')
-    parser.add_argument('--test_split_path', default = 'test.split.pkl')
+    parser.add_argument('--split_path', default = 'valid.split.pkl')
     
     # repo path params
     parser.add_argument('--repo_dir', default = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD')
@@ -135,11 +130,9 @@ if __name__ == '__main__':
         'num_workers': 1}
         
     data_dir = args.data_dir
-    train_split_path = f'{data_dir}/{args.train_split_path}'
     v_feats_dir = f'{data_dir}/{args.video_feats_dir}'
     t_feats_path = f'{data_dir}/{args.text_feats_path}'
-    train_split_path = f'{data_dir}/{args.train_split_path}'
-    test_split_path = f'{data_dir}/{args.test_split_path}'
+    split_path = f'{data_dir}/{args.split_path}'
     
     repo_dir = args.repo_dir
     output_path = args.output_dir
@@ -149,7 +142,11 @@ if __name__ == '__main__':
     model_v = load_model(model_v_path, args.v_num_feats)
     model_t = load_model(model_t_path, args.t_num_feats)
     
-    ids, embs_v, embs_t = encode_data(test_split_path, model_v, model_t)
+    data_ids = utils.load_picklefile(split_path)
+    dataset = TempuckeyDataset(v_feats_dir, t_feats_path, data_ids, video_feat_seq_len=1, sent_feat_seq_len=1, transform=None)
+    data_loader = torch.utils.data.DataLoader(dataset, **dl_params)
+    
+    ids, embs_v, embs_t = encode_data(data_loader, model_v, model_t)
     
     dist_matrix_v2t = calc_l2_distance(embs_v, embs_t)
     metrics_v2t = get_metrics(dist_matrix_v2t)
