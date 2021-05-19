@@ -93,8 +93,8 @@ def load_model(model_path, n_feats):
     
     
 if __name__ == '__main__':
-    ### python eval.py --experiment_name=experiment_0.01_10.0_0.1_0.0004_15_1x512_1x2048_7c1b5c8129b949209352c35b20983037
-
+    ### python -W ignore eval.py --experiment_name=experiment_0.0001_1.0_0.1_0.0001_32_20_1x512_1x2048_5bb195b6a8c54698aeb198df073e2535 --split_path='valid.split.pkl'
+    
     parser = argparse.ArgumentParser ()
       
     # batch_size

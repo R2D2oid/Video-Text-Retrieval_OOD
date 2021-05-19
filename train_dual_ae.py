@@ -33,10 +33,16 @@ logger = logging.getLogger()
     
 ################################################
 
-def evaluate_model(lr, lr_step_size, weight_decay, batch_size_exp):
+def evaluate_model(lr, lr_step_size, weight_decay, batch_size_exp, activated_losses):
   
     # use batch_size provided by bayes_opt as 2**int(value)
     batch_size = int(np.power(2,int(batch_size_exp)))
+    
+    # use activated_losses sample provided by bayes_opt to activate the corresponding loss portions
+    if activate_all_losses:
+        activated_losses = 127 # that is 1111111 which sets all 7 losses to True
+    activated_losses = bin(int(activated_losses))[2:].zfill(7) # get rid of the 0b starting characters in the binary
+    activated_losses = tuple(l=='1' for l in list(activated_losses))
     
     dl_params = {'batch_size': batch_size,
                  'shuffle': False,
@@ -350,7 +356,7 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
                             model_v,
                             model_t, 
                             coefs = loss_coefs, 
-                            active_losses = activated_losses)
+                            active_losses = active_losses)
 
         if valid_losses_avg is None:
             # Mode collapse! Move on from this round of training!
@@ -367,8 +373,7 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
 ########################################
 
 if __name__ == '__main__':
-    
-    ### python3 train.py --n_epochs 3 --t_num_feats 512 --v_num_feats 512 --activate_reconst_t --activate_reconst_v --loss_criterion mse --v_feat_len 4 --t_feat_len 1
+    ### python -W ignore train_dual_ae.py --n_epochs 15 --t_num_feats 512 --v_num_feats 2048 --batch_size_exp_min 5 --batch_size_exp_max 8
 
     parser = argparse.ArgumentParser ()
     parser.add_argument('--n_epochs', type = int, default = 20, help = 'number of iterations')
@@ -401,11 +406,11 @@ if __name__ == '__main__':
     parser.add_argument('--lr_gamma', type = float, default = 0.1, help = 'lr schedule: gamma')
     
     # lr
-    parser.add_argument('--lr_min', type = float, default = 0.0001, help = 'learning rate lower bound')
+    parser.add_argument('--lr_min', type = float, default = 0.00001, help = 'learning rate lower bound')
     parser.add_argument('--lr_max', type = float, default = 0.001, help = 'learning rate upper bound')
     
     # weight decay
-    parser.add_argument('--weight_decay_min', type = float, default = 0.0001, help = 'weight decay lower bound')
+    parser.add_argument('--weight_decay_min', type = float, default = 0.00001, help = 'weight decay lower bound')
     parser.add_argument('--weight_decay_max', type = float, default = 0.001, help = 'weight decay upper bound')
     
     # batch size
@@ -421,8 +426,8 @@ if __name__ == '__main__':
     parser.add_argument('--v_feat_len', type = int, default = 1, help = 'length of feat vector')
     
     # bayesian optimization parameters
-    parser.add_argument('--bayes_n_iter', type = int, default = 25, help = 'bayesian optimization num iterations')
-    parser.add_argument('--bayes_init_points', type = int, default = 5, help = 'bayesian optimization init points')
+    parser.add_argument('--bayes_n_iter', type = int, default = 50, help = 'bayesian optimization num iterations')
+    parser.add_argument('--bayes_init_points', type = int, default = 10, help = 'bayesian optimization init points')
     
     # io params
     parser.add_argument('--repo_dir', default = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments')
@@ -480,14 +485,16 @@ if __name__ == '__main__':
     
     loss_criterion = args.loss_criterion
 
-    # joint_active,reconst_v_active,reconst_t_active,cross_v_active,cross_t_active,cycle_v_active,cycle_t_active
-    if args.activate_all_losses:
-        activated_losses = (True, True, True, True, True, True, True)
-    else:
-        activated_losses = (args.activate_joint, args.activate_reconst_v, args.activate_reconst_t, args.activate_cross_v, args.activate_cross_t, args.activate_cycle_v, args.activate_cycle_t)
+    activate_all_losses = args.activate_all_losses
+        
+#     # joint_active,reconst_v_active,reconst_t_active,cross_v_active,cross_t_active,cycle_v_active,cycle_t_active
+#     if args.activate_all_losses:
+#         activated_losses = (True, True, True, True, True, True, True)
+#     else:
+#         activated_losses = (args.activate_joint, args.activate_reconst_v, args.activate_reconst_t, args.activate_cross_v, args.activate_cross_t, args.activate_cycle_v, args.activate_cycle_t)
     
     # bounds of parameter space
-    pbounds = {'lr': (lr_min, lr_max), 'lr_step_size': (lr_step_size_min, lr_step_size_max), 'weight_decay':(weight_decay_min, weight_decay_max), 'batch_size_exp': (batch_size_exp_min, batch_size_exp_max)}
+    pbounds = {'lr': (lr_min, lr_max), 'lr_step_size': (lr_step_size_min, lr_step_size_max), 'weight_decay':(weight_decay_min, weight_decay_max), 'batch_size_exp': (batch_size_exp_min, batch_size_exp_max), 'activated_losses': (1,127)}
 
     optimizer = BayesianOptimization(
         f=evaluate_model,
