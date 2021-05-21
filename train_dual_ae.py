@@ -33,7 +33,7 @@ logger = logging.getLogger()
     
 ################################################
 
-def evaluate_model(lr, lr_step_size, weight_decay, batch_size_exp, activated_losses):
+def optimize_vtr_model(lr, lr_step_size, weight_decay, batch_size_exp, activated_losses):
   
     # use batch_size provided by bayes_opt as 2**int(value)
     batch_size = int(np.power(2,int(batch_size_exp)))
@@ -395,6 +395,9 @@ if __name__ == '__main__':
     
     parser.add_argument('--activate_joint', action='store_true', help = 'enables training using joint loss')
     
+    parser.add_argument('--activated_losses_binary_min', type=int, help = 'its binary indicates which losses to activate')
+    parser.add_argument('--activated_losses_binary_max', type=int, help = 'its binary indicates which losses to activate')
+    
     # loss criterion
     parser.add_argument('--loss_criterion', default = 'mse') # MSELoss
     
@@ -486,6 +489,8 @@ if __name__ == '__main__':
     loss_criterion = args.loss_criterion
 
     activate_all_losses = args.activate_all_losses
+    activated_losses_binary_min = args.activated_losses_binary_min
+    activated_losses_binary_max = args.activated_losses_binary_max
         
 #     # joint_active,reconst_v_active,reconst_t_active,cross_v_active,cross_t_active,cycle_v_active,cycle_t_active
 #     if args.activate_all_losses:
@@ -494,10 +499,14 @@ if __name__ == '__main__':
 #         activated_losses = (args.activate_joint, args.activate_reconst_v, args.activate_reconst_t, args.activate_cross_v, args.activate_cross_t, args.activate_cycle_v, args.activate_cycle_t)
     
     # bounds of parameter space
-    pbounds = {'lr': (lr_min, lr_max), 'lr_step_size': (lr_step_size_min, lr_step_size_max), 'weight_decay':(weight_decay_min, weight_decay_max), 'batch_size_exp': (batch_size_exp_min, batch_size_exp_max), 'activated_losses': (1,127)}
+    pbounds = {'lr': (lr_min, lr_max), 
+               'lr_step_size': (lr_step_size_min, lr_step_size_max), 
+               'weight_decay':(weight_decay_min, weight_decay_max), 
+               'batch_size_exp': (batch_size_exp_min, batch_size_exp_max), 
+               'activated_losses': (activated_losses_binary_min,activated_losses_binary_max)}
 
     optimizer = BayesianOptimization(
-        f=evaluate_model,
+        f=optimize_vtr_model,
         pbounds=pbounds,
         random_state=42,
     )
