@@ -53,8 +53,8 @@ def optimize_vtr_model(lr, lr_step_size, weight_decay, batch_size_exp, activated
     logger.info(exp_info)
     
     # get data loaders for train and valid sets
-    dataloader_train = get_data_loader(train_split_path, v_feats_dir, t_feats_path, dl_params)
-    dataloader_valid = get_data_loader(valid_split_path, v_feats_dir, t_feats_path, dl_params)
+    dataloader_train = get_data_loader(train_split_path, v_feats_dir, t_feats_path, relevance_score, dl_params)
+    dataloader_valid = get_data_loader(valid_split_path, v_feats_dir, t_feats_path, relevance_score, dl_params)
 
     # train 
     torch.set_grad_enabled(True)
@@ -250,10 +250,11 @@ def instantiate_loss_criterion(loss_criterion):
 
 ########################################
 
-def get_data_loader(split_path, v_feats_dir, t_feats_path, dl_params):
+def get_data_loader(split_path, v_feats_dir, t_feats_path, relevance_score, dl_params):
     ids = utils.load_picklefile(split_path)
-    dataset = TempuckeyDataset(v_feats_dir, t_feats_path, ids, video_feat_seq_len=T, sent_feat_seq_len=L, transform=None)
+    dataset = TempuckeyDataset(v_feats_dir, t_feats_path, ids, video_feat_seq_len=T, sent_feat_seq_len=L, transform=None, relevance_score=relevance_score)
     data_loader = torch.utils.data.DataLoader(dataset, **dl_params)
+    
     return data_loader
 
 ########################################
@@ -440,10 +441,14 @@ if __name__ == '__main__':
     parser.add_argument('--valid_split_path', default = 'valid.split.pkl')
     parser.add_argument('--output_path', default = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output')
 
+    parser.add_argument('--relevance_score', type = float, default = 0.2, help = 'relevance score in range (0.0, 1.0)')
+    
     args = parser.parse_args()
     
     logger.info(args)
 
+    relevance_score = args.relevance_score
+    
     lr_min = args.lr_min
     lr_max = args.lr_max
     
