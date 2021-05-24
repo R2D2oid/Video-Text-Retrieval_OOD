@@ -15,7 +15,7 @@ class TempuckeyVideoSentencePairsDataset(Dataset):
         my_transforms = [Normalize_VideoSentencePair(), ToTensor_VideoSentencePair()]
         dataset_train = TempuckeyDataset(v_feats_dir, t_feats_path, ids_train, video_feat_seq_len=2, sent_feat_seq_len=2, transform=my_transforms)
     '''
-    def __init__(self, vid_feats_dir, txt_feats_path, split_ids, video_feat_seq_len, sent_feat_seq_len, transform=None):
+    def __init__(self, vid_feats_dir, txt_feats_path, split_ids, video_feat_seq_len, sent_feat_seq_len, transform=None, relevance_score=0.0):
         '''
         Args:
             vid_feats_dir (string): str path to the video features directory
@@ -39,6 +39,11 @@ class TempuckeyVideoSentencePairsDataset(Dataset):
 
         self.video_feat_seq_len = video_feat_seq_len
         self.sent_feat_seq_len = sent_feat_seq_len
+        
+        self.relevance_score = relevance_score
+               
+        if self.relevance_score > 0.0:
+            self.split_ids = filter_dataset_by_relevance_score(self.split_ids, self.relevance_score)
         
     def __len__(self):
         return len(self.split_ids)
@@ -94,7 +99,18 @@ class TempuckeyVideoSentencePairsDataset(Dataset):
 
         return {'videos': (v_mean, v_std), 'sents': (t_mean, t_std)}
 
-    
+
+def filter_dataset_by_relevance_score(split_ids, min_score):
+    included_ids = []
+    sents = utils.load_picklefile('/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments/sentences.pkl')
+    scores = utils.load_picklefile('/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments/sentence2relevancescore_mapping.pkl')
+    for id_ in split_ids:
+        s = sents[id_]['sentence']             
+        if scores[s] > min_score:
+            included_ids.append(id_)
+
+    return included_ids
+
 class Normalize_VideoSentencePair(object):
     '''
     Normalizes the input sample using the dataset mean and std
