@@ -33,7 +33,7 @@ logger = logging.getLogger()
     
 ################################################
 
-def optimize_vtr_model(lr, lr_step_size, weight_decay, batch_size_exp, activated_losses):
+def optimize_vtr_model(lr, lr_step_size, weight_decay, batch_size_exp, activated_losses, relevance_score):
   
     # use batch_size provided by bayes_opt as 2**int(value)
     batch_size = int(np.power(2,int(batch_size_exp)))
@@ -441,13 +441,15 @@ if __name__ == '__main__':
     parser.add_argument('--valid_split_path', default = 'valid.split.pkl')
     parser.add_argument('--output_path', default = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output')
 
-    parser.add_argument('--relevance_score', type = float, default = 0.2, help = 'relevance score in range (0.0, 1.0)')
+    parser.add_argument('--relevance_score_min', type = float, default = 0.05, help = 'relevance score in range (0.0, 1.0)')
+    parser.add_argument('--relevance_score_max', type = float, default = 0.7, help = 'relevance score in range (0.0, 1.0)')
     
     args = parser.parse_args()
     
     logger.info(args)
 
-    relevance_score = args.relevance_score
+    relevance_score_min = args.relevance_score_min
+    relevance_score_max = args.relevance_score_max
     
     lr_min = args.lr_min
     lr_max = args.lr_max
@@ -508,7 +510,9 @@ if __name__ == '__main__':
                'lr_step_size': (lr_step_size_min, lr_step_size_max), 
                'weight_decay':(weight_decay_min, weight_decay_max), 
                'batch_size_exp': (batch_size_exp_min, batch_size_exp_max), 
-               'activated_losses': (activated_losses_binary_min,activated_losses_binary_max)}
+               'activated_losses': (activated_losses_binary_min,activated_losses_binary_max),
+               'relevance_score': (relevance_score_min,relevance_score_max)
+              }
 
     optimizer = BayesianOptimization(
         f=optimize_vtr_model,
