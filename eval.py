@@ -12,6 +12,40 @@ import math
 
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 
+def encode_data_v2t(data_loader, model_v2t):
+    '''
+    Input Parameters:
+        split_path: data split path for data loader
+        model_v2t: a video encoder/decoder model
+    Returns
+        list of ids, encoded video embeddeings, encoded text embeddings
+    '''
+   
+    ids_list = []
+    pred_t_list = []
+    orig_t_list = []
+    
+    model_v2t.eval()
+    
+    for sample in data_loader:
+        i = sample['id']
+        v = sample['video']
+        t = sample['sent']
+
+        ids_list.extend(i)
+        orig_t_list.extend(t.numpy())
+
+        with torch.no_grad():
+            pred_t = model_v2t(v)
+    
+        pred_t_list.extend(pred_t.numpy())
+    
+    pred_t_list = torch.from_numpy(np.array(pred_t_list)).squeeze()
+    orig_t_list = torch.tensor(orig_t_list)
+    assert len(ids_list) == len(pred_t_list)
+
+    return ids_list, pred_t_list, orig_t_list    
+
 def encode_data(data_loader, model_v, model_t):
     '''
     Input Parameters:
@@ -71,7 +105,7 @@ def get_metrics(mat):
     metrics = [recall_1, recall_5, recall_10, mean_rank, med_rank]
     metrics = [round(m,2) for m in metrics]
     
-    return metrics
+    return metrics, ranks
 
 
 def calc_cosine_distance(embs_mode1, embs_mode2):      
@@ -152,12 +186,15 @@ if __name__ == '__main__':
     ids, embs_v, embs_t = encode_data(data_loader, model_v, model_t)
     
     dist_matrix_v2t = calc_l2_distance(embs_v, embs_t)
-    metrics_v2t = get_metrics(dist_matrix_v2t)
+    metrics_v2t, ranks_v2t = get_metrics(dist_matrix_v2t)
     
     dist_matrix_t2v = calc_l2_distance(embs_t, embs_v)
-    metrics_t2v = get_metrics(dist_matrix_t2v)
+    metrics_t2v, ranks_t2v = get_metrics(dist_matrix_t2v)
 
     print(metrics_v2t)
     print(metrics_t2v)
-
+    
+    import pickle as pkl
+    sents = pkl.load(open('/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments/sentences.pkl','rb'))
+    pdb.set_trace()
     
