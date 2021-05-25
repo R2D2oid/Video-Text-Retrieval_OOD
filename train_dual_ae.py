@@ -86,7 +86,7 @@ def validation_metrics(data_loader, model_v, model_t):
     _, embs_v, embs_t = encode_data(data_loader, model_v, model_t)
     
     dist_matrix_v2t = calc_l2_distance(embs_v, embs_t)
-    v2t_metrics = get_metrics(dist_matrix_v2t)
+    v2t_metrics, _ = get_metrics(dist_matrix_v2t)
 
     return v2t_metrics
 
