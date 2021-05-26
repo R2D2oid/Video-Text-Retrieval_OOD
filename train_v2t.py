@@ -13,6 +13,7 @@ from layers.v2t import V2T
 from data_provider import TempuckeyVideoSentencePairsDataset as TempuckeyDataset
 from data_provider import Normalize_VideoSentencePair
 from eval import calc_l2_distance, get_metrics, encode_data_v2t
+from layers.contrastive_loss import ContrastiveLoss
 
 # torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
@@ -55,6 +56,11 @@ def optimize_v2t_model(lr, lr_step_size, weight_decay, batch_size_exp, relevance
     torch.set_grad_enabled(True)
     model_v2t, train_loss = train_model(dataloader_train, dataloader_valid, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params)
     
+    # loss is nan
+    if model_v2t is None:
+        logger.warning('NaN encountered in loss!\n Moving on to the next iteration of bayes_opt!')
+        return -10
+    
     # calculate loss on validation
     valid_loss = evaluate_validation(dataloader_valid, model_v2t)
     
@@ -63,7 +69,7 @@ def optimize_v2t_model(lr, lr_step_size, weight_decay, batch_size_exp, relevance
     
     # save trained model, training losses, and validation losses
     save_experiment(model_v2t, valid_loss, train_loss, exp_dir, exp_name)
-    logger.info(f'saved model_t, model_v, training/validation loss to {exp_dir}')
+    logger.info(f'saved model_v2 and train/valid loss to {exp_dir}')
     
     v2t_metrics_train, _, _ = validation_metrics(dataloader_train, model_v2t)
     recall_at_1_train = v2t_metrics_train[0]
@@ -71,6 +77,7 @@ def optimize_v2t_model(lr, lr_step_size, weight_decay, batch_size_exp, relevance
     v2t_metrics_valid, ranks_valid, dist_matrix_v2t = validation_metrics(dataloader_valid, model_v2t)
     recall_at_1_valid = v2t_metrics_valid[0]
     
+    logger.info(f'loss valid/train: {valid_loss}/{train_loss}')
     logger.info(f'recall_at_1 valid/train: {recall_at_1_valid}/{recall_at_1_train}')
     
     return recall_at_1_valid
@@ -127,7 +134,7 @@ def get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_fe
 ################################
 
 def evaluate_validation(data_loader, model_v2t):
-    criterion, target_tensor = instantiate_loss_criterion(loss_criterion)
+    criterion, target_tensor = instantiate_loss_criterion(loss_criterion, temperature=temperature)
 
     model_v2t.eval()
 
@@ -136,25 +143,42 @@ def evaluate_validation(data_loader, model_v2t):
         v = sample['video']
         t = sample['sent']
         
+        v = torch.tensor(v).float().cuda()
+        t = torch.tensor(t).float().cuda()
+
         with torch.no_grad():
             # forward
             pred_t = model_v2t(v)
-            loss = criterion(pred_t, t) if loss_criterion=='mse' else criterion(pred_t, t, target_tensor)
-                        
+
+            if loss_criterion == 'contrastive':
+                pred_t = pred_t.unsqueeze(dim=1)
+                t = t.unsqueeze(dim=1)
+                tt = torch.cat([t,pred_t], dim=1) 
+                loss = criterion(tt)
+            elif loss_criterion == 'cosine':
+                loss = criterion(pred_t, t, target_tensor)
+            else: # mse
+                loss = criterion(pred_t, t)
     return loss 
     
 ########################################
 
-def instantiate_loss_criterion(loss_criterion):
+def instantiate_loss_criterion(loss_criterion, temperature):
+    
+    target_tensor = None
+    
     if loss_criterion == 'cosine':
         # target_tensor = torch.Tensor(1) # use 1 to train for bringing together corresponding (positive) vectors
         # target_tensor = torch.Tensor(-1) # use -1 to train for pushing apart dissimilar (negative) vectors
         criterion = nn.CosineEmbeddingLoss()
         # the cosine embedding loss takes a target y=1 for training positive (similar) vectors and y=-1 for training dissimilar (negative) vectors
         target_tensor = torch.Tensor(1)
+    elif loss_criterion=='contrastive':
+        #temp = 1
+        #criterion = ContrastiveLoss(temperature=temp)
+        criterion = ContrastiveLoss(temperature=temperature, contrast_mode='all', base_temperature=temperature)
     else:
         criterion = nn.MSELoss()
-        target_tensor = None
         
     return criterion, target_tensor
 
@@ -178,36 +202,50 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
     ### instantiate v2t model
     model_v2t = V2T(n_feats_v)
 
+    model_v2t.cuda()
     model_v2t.to(device)
-   
+    
     # Adam optimizer
     optimizer_v2t = torch.optim.Adam(model_v2t.parameters(), lr = lr, weight_decay = weight_decay)
    
     torch.optim.lr_scheduler.StepLR(optimizer_v2t, step_size = lr_step_size, gamma = lr_gamma)
     
     losses_avg = []
-    criterion, target_tensor = instantiate_loss_criterion(loss_criterion)
-
     flag = True
-
+    temperature_init = 10.0
+    counter = 0
     ### train the model
     for epoch in range(n_epochs):
         model_v2t.train()
+
+        global temperature 
+        temperature = max(temperature_init-epoch, 1.0)
+        logger.info(f'Contrastive Loss Temperature is {temperature} at epoch {epoch}')
+        
+        criterion, target_tensor = instantiate_loss_criterion(loss_criterion, temperature = temperature)
         
         losses = []
         counter = 1    
-        
         for sample in data_loader_train:
             v = sample['video']
             t = sample['sent']
 
-            v = torch.tensor(v).float()
-            t = torch.tensor(t).float()
+            v = torch.tensor(v).float().cuda()
+            t = torch.tensor(t).float().cuda()
             
             # forward
             pred_t = model_v2t(v)
-            loss = criterion(pred_t, t) if loss_criterion=='mse' else criterion(pred_t, t, target_tensor)
-
+            
+            if loss_criterion == 'contrastive':
+                pred_t = pred_t.unsqueeze(dim=1)
+                t = t.unsqueeze(dim=1)
+                tt = torch.cat([t,pred_t], dim=1) 
+                loss = criterion(tt)
+            elif loss_criterion == 'cosine':
+                loss = criterion(pred_t, t, target_tensor)
+            else: # mse
+                loss = criterion(pred_t, t)
+                
             # backprop and optimize
             optimizer_v2t.zero_grad()
             loss.backward()
@@ -219,6 +257,10 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
             
             losses.append(loss.item())
             
+        import math
+        if math.isnan(loss):
+            return None, None
+        
         loss_avg = np.array(losses).mean()
         losses_avg.append(loss_avg)
         logger.info(f'Finshed Epoch[{epoch + 1}/{n_epochs}]\nAverage Loss Summary:\n{loss_avg}\n')
