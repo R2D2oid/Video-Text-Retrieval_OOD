@@ -36,7 +36,7 @@ def encode_data_v2t(data_loader, model_v2t):
         orig_t_list.extend(t.numpy())
 
         with torch.no_grad():
-            pred_t = model_v2t(v)
+            pred_t = model_v2t(v).cpu()
     
         pred_t_list.extend(pred_t.numpy())
     
