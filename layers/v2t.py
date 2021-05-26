@@ -30,6 +30,6 @@ class V2T(nn.Module):
          )
         
     def forward(self, x):
-        x = torch.tensor(x).float()
+        x = torch.tensor(x).float().cuda()
         x = self.v2t_(x)
         return x
