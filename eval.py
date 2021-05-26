@@ -108,6 +108,21 @@ def get_metrics(mat):
     return metrics, ranks
 
 
+def normalize_metrics(metrics_experiment, n_samples_experiment, n_samples_baseline = 1000):
+    # the resulting normalized metrics compare against a baseline with 1000 samples
+    # R@1, R@5, R@10, mean_rank, median_rank
+    # [0.1, 0.5, 1, 500, 500]
+    
+    metrics_experiment = np.array(metrics_experiment)
+    
+    recall_at_k_normed = metrics_experiment[:3]*n_samples_experiment/n_samples_baseline
+    ranks_normed = metrics_experiment[3:5]*n_samples_baseline/n_samples_experiment
+    
+    metrics_normed = [round(r, 2) for r in recall_at_k_normed]
+    metrics_normed.extend([int(r) for r in ranks_normed])
+    
+    return metrics_normed
+
 def calc_cosine_distance(embs_mode1, embs_mode2):      
     return np.dot(embs_mode1, embs_mode2.T)
 
