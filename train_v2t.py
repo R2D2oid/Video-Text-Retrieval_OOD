@@ -41,8 +41,10 @@ def optimize_v2t_model(lr, lr_step_size, weight_decay, batch_size_exp, relevance
     batch_size = int(np.power(2,int(batch_size_exp)))
     
     dl_params = {'batch_size': batch_size,
-                 'shuffle': False,
+                 'shuffle': shuffle,
                  'num_workers': 1}
+    
+    lr_step_size = int(lr_step_size)
     
     # display experiment info
     exp_info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
@@ -202,13 +204,11 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
     ### instantiate v2t model
     model_v2t = V2T(n_feats_v)
 
-    model_v2t.cuda()
     model_v2t.to(device)
     
     # Adam optimizer
     optimizer_v2t = torch.optim.Adam(model_v2t.parameters(), lr = lr, weight_decay = weight_decay)
-   
-    torch.optim.lr_scheduler.StepLR(optimizer_v2t, step_size = lr_step_size, gamma = lr_gamma)
+    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer_v2t, step_size = lr_step_size, gamma = lr_gamma)
     
     losses_avg = []
     flag = True
@@ -261,10 +261,17 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
         if math.isnan(loss):
             return None, None
         
+        lr_value = lr_scheduler.optimizer.param_groups[0]['lr']
+        writer.add_scalar(f'{exp_name}/train/lr', lr_value, epoch)
+        lr_scheduler.step()
+        
         loss_avg = np.array(losses).mean()
         losses_avg.append(loss_avg)
-        logger.info(f'Finshed Epoch[{epoch + 1}/{n_epochs}]\nAverage Loss Summary:\n{loss_avg}\n')
+        logger.info(f'epoch[{epoch + 1}/{n_epochs}]')
            
+        train_loss = loss_avg
+        logger.info(f'    loss train: {train_loss}')
+
         if flag == True:
             writer.add_graph(model_v2t, v)
             flag = False
@@ -329,6 +336,8 @@ if __name__ == '__main__':
     parser.add_argument('--relevance_score_min', type = float, default = 0.05, help = 'relevance score in range (0.0, 1.0)')
     parser.add_argument('--relevance_score_max', type = float, default = 0.7, help = 'relevance score in range (0.0, 1.0)')
     
+    parser.add_argument('--shuffle', dest='shuffle', action='store_true')
+    
     args = parser.parse_args()
     
     logger.info(args)
@@ -349,6 +358,8 @@ if __name__ == '__main__':
     
     batch_size_exp_min = args.batch_size_exp_min
     batch_size_exp_max = args.batch_size_exp_max
+    
+    shuffle = args.shuffle
     
     n_epochs = args.n_epochs
     n_train_samples = args.n_train_samples
