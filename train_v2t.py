@@ -54,20 +54,23 @@ def optimize_v2t_model(lr, lr_step_size, weight_decay, batch_size_exp, relevance
     dataloader_train = get_data_loader(train_split_path, v_feats_dir, t_feats_path, relevance_score, dl_params)
     dataloader_valid = get_data_loader(valid_split_path, v_feats_dir, t_feats_path, relevance_score, dl_params)
 
+    # get experiment name 
+    _, exp_name = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, relevance_score, shuffle, loss_criterion, write_it=False)
+    
     # train 
     torch.set_grad_enabled(True)
-    model_v2t, train_loss = train_model(dataloader_train, dataloader_valid, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params)
+    model_v2t, train_loss = train_model(dataloader_train, dataloader_valid, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, exp_name)
     
     # loss is nan
     if model_v2t is None:
-        logger.warning('NaN encountered in loss!\n Moving on to the next iteration of bayes_opt!')
+        logger.warning('NaN encountered in loss... Moving on to the next iteration of bayes_opt!')
         return -10
     
     # calculate loss on validation
     valid_loss = evaluate_validation(dataloader_valid, model_v2t)
     
     # log experiment meta data 
-    exp_dir, exp_name = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
+    exp_dir, exp_name = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, relevance_score, shuffle, loss_criterion, write_it=True)
     
     # save trained model, training losses, and validation losses
     save_experiment(model_v2t, valid_loss, train_loss, exp_dir, exp_name)
@@ -79,10 +82,22 @@ def optimize_v2t_model(lr, lr_step_size, weight_decay, batch_size_exp, relevance
     v2t_metrics_valid, ranks_valid, dist_matrix_v2t = validation_metrics(dataloader_valid, model_v2t)
     recall_at_1_valid = v2t_metrics_valid[0]
     
-    logger.info(f'loss valid/train: {valid_loss}/{train_loss}')
-    logger.info(f'recall_at_1 valid/train: {recall_at_1_valid}/{recall_at_1_train}')
+    logger.warning(f'loss train: {train_loss}')
+    logger.warning(f'recall_at_1 train: {recall_at_1_train}')
     
     return recall_at_1_valid
+
+########################################
+
+def normalize_metrics(metrics_experiment, n_smples_experiment, n_smples_baseline = 1000):
+    metrics_experiment = np.array(metrics_experiment)
+    
+    recall_at_k_normed = metrics_experiment[:3]*n_smples_experiment/n_smples_baseline
+    ranks_normed = metrics_experiment[3:5]*n_smples_baseline/n_smples_experiment
+    
+    metrics_normed = [round(r, 2) for r in recall_at_k_normed]
+    metrics_normed.extend([int(r) for r in ranks_normed])
+    return metrics_normed
 
 ########################################
 
@@ -92,7 +107,9 @@ def validation_metrics(data_loader, model_v2t):
     dist_matrix_v2t = calc_l2_distance(orig_t, pred_t)
     v2t_metrics, ranks = get_metrics(dist_matrix_v2t)
 
-    return v2t_metrics, ranks, dist_matrix_v2t
+    v2t_metrics_norm = normalize_metrics(v2t_metrics, n_smples_experiment=data_loader.__len__(), n_smples_baseline = 1000)
+    
+    return v2t_metrics_norm, ranks, dist_matrix_v2t
 
 ########################################
 def save_experiment(model_v2t, valid_loss, train_loss, exp_dir, exp_name):
@@ -104,17 +121,20 @@ def save_experiment(model_v2t, valid_loss, train_loss, exp_dir, exp_name):
     
 ########################################
 
-def log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size):
+def log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, relevance_score, shuffle, loss_criterion, write_it=True):
     import uuid
     random_hash = uuid.uuid4().hex
 
-    exp_name = f'experiment_{lr}_{lr_step_size}_{lr_gamma}_{weight_decay}_{batch_size}_{n_epochs}_{L}x{n_feats_t}_{T}x{n_feats_v}_{random_hash}'
+    shuffle_flag = 'yes' if shuffle else 'no'
+    exp_name = f'experiment_shuffle_{shuffle_flag}_loss_{loss_criterion}_lr_{round(lr,6)}_lr_step_{round(lr_step_size,6)}_gamma_{round(lr_gamma,6)}_wdecay_{round(weight_decay,6)}_bsz_{batch_size}_epochs_{n_epochs}_relevance_{round(relevance_score,2)}_{L}x{n_feats_t}_{T}x{n_feats_v}_{random_hash}'
     exp_dir = f'{output_path}/experiments/{exp_name}'
-    utils.create_dir_if_not_exist(exp_dir)
-        
-    info_path = f'{exp_dir}/experiment_info.txt'
-    info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
-    utils.dump_textfile(info, info_path)
+    
+    if write_it:
+        utils.create_dir_if_not_exist(exp_dir)
+
+        info_path = f'{exp_dir}/experiment_info.txt'
+        info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
+        utils.dump_textfile(info, info_path)
     
     return exp_dir, exp_name
 
@@ -195,7 +215,7 @@ def get_data_loader(split_path, v_feats_dir, t_feats_path, relevance_score, dl_p
 
 ########################################
 
-def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params):   
+def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, exp_name):   
              
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -277,7 +297,7 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
             flag = False
                 
         # write train and valid loss to tensorboard
-        writer.add_scalar(f'loss/train', loss, epoch)
+        writer.add_scalar(f'{exp_name}/loss/train', loss, epoch)
         
     writer.flush()
     return model_v2t, loss_avg
@@ -295,11 +315,11 @@ if __name__ == '__main__':
     parser.add_argument('--loss_criterion', default = 'mse') # MSELoss
     
     # lr step size
-    parser.add_argument('--lr_step_size_min', type = int, default = 1, help = 'lr schedule: step size lower bound')
-    parser.add_argument('--lr_step_size_max', type = int, default = 10, help = 'lr schedule: step size upper bound')
+    parser.add_argument('--lr_step_size_min', type = int, default = 50, help = 'lr schedule: step size lower bound')
+    parser.add_argument('--lr_step_size_max', type = int, default = 400, help = 'lr schedule: step size upper bound')
     
     # lr gamma
-    parser.add_argument('--lr_gamma', type = float, default = 0.1, help = 'lr schedule: gamma')
+    parser.add_argument('--lr_gamma', type = float, default = 0.8, help = 'lr schedule: gamma')
     
     # lr
     parser.add_argument('--lr_min', type = float, default = 0.00001, help = 'learning rate lower bound')
