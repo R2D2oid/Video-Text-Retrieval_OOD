@@ -68,13 +68,13 @@ def optimize_v2t_model(lr, lr_step_size, weight_decay, batch_size_exp, relevance
     
     # calculate loss on validation
     valid_loss = evaluate_validation(dataloader_valid, model_v2t)
-    
+       
     # log experiment meta data 
     exp_dir, exp_name = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, relevance_score, shuffle, loss_criterion, write_it=True)
     
     # save trained model, training losses, and validation losses
-    save_experiment(model_v2t, valid_loss, train_loss, exp_dir, exp_name)
-    logger.info(f'saved model_v2 and train/valid loss to {exp_dir}')
+    save_experiment(model_v2t, None, train_loss, exp_dir, exp_name)
+    logger.warning(f'saved model_v2 and train/valid loss to {exp_dir}')
     
     v2t_metrics_train, _, _ = validation_metrics(dataloader_train, model_v2t)
     recall_at_1_train = v2t_metrics_train[0]
@@ -85,7 +85,7 @@ def optimize_v2t_model(lr, lr_step_size, weight_decay, batch_size_exp, relevance
     logger.warning(f'loss train: {train_loss}')
     logger.warning(f'recall_at_1 train: {recall_at_1_train}')
     
-    return recall_at_1_valid
+    return recall_at_1_train
 
 ########################################
 
@@ -271,7 +271,7 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
             loss.backward()
             optimizer_v2t.step()
             
-            logger.info('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, num_samples, loss.item()))
+            logger.debug('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, num_samples, loss.item()))
 
             counter = counter + 1 
             
@@ -290,7 +290,18 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
         logger.info(f'epoch[{epoch + 1}/{n_epochs}]')
            
         train_loss = loss_avg
+        #valid_loss = evaluate_validation(data_loader_valid, model_v2t)
+        #logger.warning(f'loss valid/train: {valid_loss}/{train_loss}')
         logger.info(f'    loss train: {train_loss}')
+
+#         v2t_metrics_valid, _, _ = validation_metrics(data_loader_valid, model_v2t)
+#         recall_at_1_valid, recall_at_5_valid, recall_at_10_valid, _, _ = v2t_metrics_valid
+#         logger.warning(f'    recall_at_1/5/10 valid: {recall_at_1_valid}/{recall_at_5_valid}/{recall_at_10_valid}')
+
+#         v2t_metrics_train, _, _ = validation_metrics(data_loader_train, model_v2t)
+#         recall_at_1_train, recall_at_5_train, recall_at_10_train, _, _ = v2t_metrics_train
+
+#         logger.warning(f'    recall_at_1/5/10 train: {recall_at_1_train}/{recall_at_5_train}/{recall_at_10_train}')
 
         if flag == True:
             writer.add_graph(model_v2t, v)
@@ -306,6 +317,7 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
 
 if __name__ == '__main__':
     ### python -W ignore train_v2t.py --n_epochs 15 --t_num_feats 512 --v_num_feats 2048 
+    # python -W ignore train_v2t.py --n_epochs 500 --t_num_feats 512 --v_num_feats 2048 --batch_size_exp_min 7 --batch_size_exp_max 7 --lr_min 0.0001 --lr_max 0.001 --weight_decay_min 0.00001 --weight_decay_max 0.001 --lr_step_size_min 50 --lr_step_size_max 400 --lr_gamma 0.9 --relevance_score_min 0.3 --relevance_score_max 0.31 --shuffle --loss_criterion contrastive
 
     parser = argparse.ArgumentParser ()
     parser.add_argument('--n_epochs', type = int, default = 20, help = 'number of iterations')
@@ -349,7 +361,7 @@ if __name__ == '__main__':
     parser.add_argument('--repo_dir', default = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments')
     parser.add_argument('--video_feats_dir', default = 'feats/video/r2plus1d_resnet50_kinetics400')
     parser.add_argument('--text_feats_path', default = 'feats/text/universal/sentence_feats.pkl')
-    parser.add_argument('--train_split_path', default = 'train.split.pkl')    
+    parser.add_argument('--train_split_path', default = 'train_valid.split.pkl')    
     parser.add_argument('--valid_split_path', default = 'valid.split.pkl')
     parser.add_argument('--output_path', default = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output')
 
