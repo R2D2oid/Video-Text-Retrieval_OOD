@@ -22,8 +22,8 @@ def encode_data_t2v(data_loader, model_t2v):
     '''
    
     ids_list = []
-    pred_t_list = []
-    orig_t_list = []
+    pred_v_list = []
+    orig_v_list = []
     
     model_t2v.eval()
     
