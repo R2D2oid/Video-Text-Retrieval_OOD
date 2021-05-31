@@ -102,11 +102,9 @@ def normalize_metrics(metrics_experiment, n_smples_experiment, n_smples_baseline
 ########################################
 
 def validation_metrics(data_loader, model):
-    ids, pred_v, orig_v = encode_data(data_loader, model)
-    
+    ids, pred_v, orig_v = encode_data_t2v(data_loader, model)
     dist_matrix = calc_l2_distance(orig_v, pred_v)
     metrics, ranks = get_metrics(dist_matrix)
-
     metrics_norm = normalize_metrics(metrics, n_smples_experiment=data_loader.__len__(), n_smples_baseline = 1000)
     
     return metrics_norm, ranks, dist_matrix
