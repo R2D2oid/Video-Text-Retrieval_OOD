@@ -7,7 +7,6 @@ class AE(nn.Module):
         
         # the layer dim reductions are based on 2048 video feat vector size and 512 text feature vector size
         
-        # defining Encoder network with 4 fully connected layers
         self.encoder_ = nn.Sequential(
             nn.Linear(n_feat, int(n_feat/2)),
             nn.Dropout(0.2),
@@ -23,7 +22,6 @@ class AE(nn.Module):
             nn.Linear(int(n_feat/8), 32)
          )
         
-        # defining Decoder network with 4 fully connected layers
         self.decoder_ = nn.Sequential(
             nn.Linear(32, int(n_feat/8)),
             nn.ReLU(True),
@@ -40,11 +38,13 @@ class AE(nn.Module):
         )
          
     def encoder(self, x):
+        x = torch.tensor(x).float().cuda()
         x = self.encoder_(x)
         # add L2 normalization to get L2_norm(embedding) = 1
         return x
     
     def decoder(self, x):
+        x = torch.tensor(x).float().cuda()
         x = self.decoder_(x)
         return x
     

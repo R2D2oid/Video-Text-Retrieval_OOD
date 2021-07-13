@@ -219,6 +219,9 @@ def evaluate_validation(data_loader, model_v, model_t, coefs, active_losses):
         v = sample['video']
         t = sample['sent']
         
+        v = torch.tensor(v).float().cuda()
+        t = torch.tensor(t).float().cuda()
+
         with torch.no_grad():
             loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses, target = target_tensor)
             losses.append([l.item() if isinstance(l,torch.Tensor) else l for l in loss])
@@ -321,8 +324,11 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
             v = sample['video']
             t = sample['sent']
 
+            v = torch.tensor(v).float().cuda()
+            t = torch.tensor(t).float().cuda()
+            
             if flag == True:
-                writer.add_graph(model_v, torch.Tensor(v))
+                writer.add_graph(model_v, v)
                 flag = False
             
             loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses, target = target_tensor)
