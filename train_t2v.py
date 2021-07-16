@@ -79,8 +79,8 @@ def optimize_t2v_model(lr, lr_step_size, weight_decay, batch_size_exp, relevance
     metrics_train, _, _ = validation_metrics(dataloader_train, model)
     recall_at_1_train = metrics_train[0]
 
-    metrics_valid, ranks_valid, dist_matrix = validation_metrics(dataloader_valid, model)
-    recall_at_1_valid = metrics_valid[0]
+    #metrics_valid, ranks_valid, dist_matrix = validation_metrics(dataloader_valid, model)
+    #recall_at_1_valid = metrics_valid[0]
     
     logger.warning(f'loss train: {train_loss}')
     logger.warning(f'recall_at_1 train: {recall_at_1_train}')
@@ -352,8 +352,8 @@ if __name__ == '__main__':
     parser.add_argument('--v_feat_len', type = int, default = 1, help = 'length of feat vector')
     
     # bayesian optimization parameters
-    parser.add_argument('--bayes_n_iter', type = int, default = 10, help = 'bayesian optimization num iterations')
-    parser.add_argument('--bayes_init_points', type = int, default = 10, help = 'bayesian optimization init points')
+    parser.add_argument('--bayes_n_iter', type = int, default = 5, help = 'bayesian optimization num iterations')
+    parser.add_argument('--bayes_init_points', type = int, default = 5, help = 'bayesian optimization init points')
     
     # io params
     parser.add_argument('--repo_dir', default = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments')

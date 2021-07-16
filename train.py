@@ -136,6 +136,7 @@ def forward_multimodal(model_v, model_t, criterion, v, t, coefs=None, active_los
     loss_recons_v = 0
     if reconst_v_active:
         v_reconst = model_v(v).reshape(dims_v[0], dims_v[1])
+        ########!!!!!!!!!! verify dims of v and reconst v to ensure they are compatible
         loss_recons_v = criterion(v_reconst, v) if loss_criterion=='mse' else criterion(v_reconst, v, target)
         
     loss_recons_t = 0
@@ -300,17 +301,20 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
 
     criterion, target_tensor = instantiate_loss_criterion(loss_criterion)
 
+    flag = True
     
-#     writer.add_graph(model_v, torch.Tensor(vids[0]))
-
     ### train the model
     for epoch in range(n_epochs):
         counter = 1
         losses = [['joint', 'recons_t', 'recons_v', 'cross_t', 'cross_v', 'cycle_t', 'cycle_v', 'total']]
+        
         for sample in data_loader:
             v = sample['video'][0]
             t = sample['sent'][0]
 
+            if flag == True:
+                writer.add_graph(model_v, torch.Tensor(v))
+            
             loss = forward_multimodal(model_v, model_t, criterion, v, t, coefs, active_losses, target = target_tensor)
             losses.append([l.item() if isinstance(l,torch.Tensor) else l for l in loss])
 
@@ -333,10 +337,12 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
 
             logger.info('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, num_samples, loss[-1].item()))
 
-            #writer.add_scalar("Loss/train", loss[-1].item(), epoch)
             counter = counter + 1 
+
         losses_avg.append(average(losses)) 
-        writer.add_scalar("AvgLoss/train", losses_avg[-1].item(), epoch)
+        writer.add_scalar("AvgLoss/train", losses_avg[-1][-1], epoch)
+        writer.add_scalar("Loss_recons_t/train", losses[-1][1], epoch)
+        writer.add_scalar("Loss_recons_v/train", losses[-1][2], epoch)
         logger.info(f'Epoch[{epoch + 1}/{n_epochs}], Loss: {losses_avg[-1]}')
     
     writer.flush()
@@ -345,7 +351,7 @@ def train_model(split_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, 
 ########################################
 
 if __name__ == '__main__':
-    ### python3 train.py --n_epochs 3 --t_num_feats 300 --v_num_feats 512 --activate_reconst_t --activate_reconst_v --loss_criterion mse
+    ### python3 train.py --n_epochs 3 --t_num_feats 512 --v_num_feats 512 --activate_reconst_t --activate_reconst_v --loss_criterion mse --v_feat_len 4 --t_feat_len 1
 
     parser = argparse.ArgumentParser ()
     parser.add_argument('--n_epochs', type = int, default = 10, help = 'number of iterations')
