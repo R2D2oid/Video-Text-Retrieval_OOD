@@ -12,17 +12,19 @@ import utilities as utils
 from layers.AE import AE
 from data_provider import TempuckeyVideoSentencePairsDataset as TempuckeyDataset
 from data_provider import Normalize_VideoSentencePair
-from eval import encode_data, calc_l2_distance, get_metrics 
+from eval import encode_data, calc_l2_distance, calc_cosine_distance, get_metrics , normalize_metrics
+from layers.loss import TripletLoss
 
 # torch.set_default_tensor_type(torch.cuda.FloatTensor)
 
 # init tensorboard
 writer = SummaryWriter('runs/')
+torch.manual_seed(42)
 
 # init logging
 logfile = 'logs/logfile_{}.log'.format(dt.now())
 logformat = '%(asctime)s - %(name)s - %(levelname)s - %(message)s'
-loglevel = 40 ## levels: NOTSET = 0 | DEBUG = 10 | INFO = 20 | WARNING = 30 | ERROR = 40 | CRITICAL = 50
+loglevel = 20 ## levels: NOTSET = 0 | DEBUG = 10 | INFO = 20 | WARNING = 30 | ERROR = 40 | CRITICAL = 50
 logging.basicConfig (
     filename = logfile.format (dt.now().date()),
     level = loglevel,
@@ -45,9 +47,11 @@ def optimize_vtr_model(lr, lr_step_size, weight_decay, batch_size_exp, activated
     activated_losses = tuple(l=='1' for l in list(activated_losses))
     
     dl_params = {'batch_size': batch_size,
-                 'shuffle': False,
+                 'shuffle': shuffle,
                  'num_workers': 1}
     
+    lr_step_size = int(lr_step_size)
+
     # display experiment info
     exp_info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
     logger.info(exp_info)
@@ -56,39 +60,61 @@ def optimize_vtr_model(lr, lr_step_size, weight_decay, batch_size_exp, activated
     dataloader_train = get_data_loader(train_split_path, v_feats_dir, t_feats_path, relevance_score, dl_params)
     dataloader_valid = get_data_loader(valid_split_path, v_feats_dir, t_feats_path, relevance_score, dl_params)
 
+    # get experiment name 
+    _, exp_name = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, relevance_score, shuffle, loss_criterion, write_it=False)
+
     # train 
     torch.set_grad_enabled(True)
     model_v, model_t, train_losses, train_losses_avg = train_model(dataloader_train, dataloader_valid, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, coefs = loss_coefs, active_losses = activated_losses)
     
+    # loss is nan
     if model_v is None:
-        # model_v and model_t are returned as None if mode collapse occurs during training
-        print('Moving on to the next round of Bayesian Optimization!')
+        logger.warning('NaN encountered in loss... Moving on to the next iteration of bayes_opt!')
         return -10.0
 
     # calculate loss on validation
     valid_loss, valid_losses, valid_losses_avg = evaluate_validation(dataloader_valid, model_v, model_t, coefs=loss_coefs, active_losses=activated_losses)
     
     # log experiment meta data 
-    exp_dir, exp_name = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
+    exp_dir, exp_name = log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, relevance_score, shuffle, loss_criterion, write_it=True)
     
     # save trained model, training losses, and validation losses
     save_experiment(model_v, model_t, train_losses, train_losses_avg, valid_losses, valid_losses_avg, exp_dir, exp_name)
     logger.info(f'saved model_t, model_v, training/validation loss to {exp_dir}')
 
-    v2t_metrics = validation_metrics(dataloader_valid, model_v, model_t)
-    recall_at_1 = v2t_metrics[0]
+    train_joint_loss = train_losses[-1][0]
+    logger.warning(f'loss train: {train_joint_loss}')
     
-    return recall_at_1
+    metrics_train, _, _ = validation_metrics(dataloader_train, model_v, model_t)
+    recall_at_1_train = metrics_train[0]
+    logger.warning(f'recall_at_1 train: {recall_at_1_train}')
+    
+#     #metrics_valid, ranks_valid, dist_matrix_v2t = validation_metrics(dataloader_valid, model_v, model_t)
+#     metrics_valid, _, _ = validation_metrics(dataloader_valid, model_v, model_t)
+#     recall_at_1_valid = metrics_valid[0]
+    
+#     writer.add_scalar(f'recall_at_1/train',recall_at_1_train)
+    
+    #metrics = validation_metrics(dataloader_valid, model_v, model_t)
+    #recall_at_1 = v2t_metrics[0]
+    
+#     import pdb
+#     pdb.set_trace()
+    
+    return recall_at_1_train
+#     return -train_joint_loss
 
 ########################################
 
 def validation_metrics(data_loader, model_v, model_t):
     _, embs_v, embs_t = encode_data(data_loader, model_v, model_t)
     
-    dist_matrix_v2t = calc_l2_distance(embs_v, embs_t)
-    v2t_metrics, _ = get_metrics(dist_matrix_v2t)
+    dist_matrix = calc_l2_distance(embs_v, embs_t)
+    #dist_matrix = calc_cosine_distance(embs_v, embs_t)
+    metrics, ranks = get_metrics(dist_matrix)
+    metrics = normalize_metrics(metrics, n_samples_experiment=data_loader.__len__(), n_samples_baseline = 1000)
 
-    return v2t_metrics
+    return metrics, ranks, dist_matrix
 
 ########################################
 def save_experiment(model_v, model_t, train_losses, train_losses_avg, valid_losses, valid_losses_avg, exp_dir, exp_name):
@@ -106,19 +132,36 @@ def save_experiment(model_v, model_t, train_losses, train_losses_avg, valid_loss
     
 ########################################
 
-def log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size):
+def log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, relevance_score, shuffle, loss_criterion, write_it=True):
     import uuid
     random_hash = uuid.uuid4().hex
 
-    exp_name = f'experiment_{lr}_{lr_step_size}_{lr_gamma}_{weight_decay}_{batch_size}_{n_epochs}_{L}x{n_feats_t}_{T}x{n_feats_v}_{random_hash}'
+    shuffle_flag = 'yes' if shuffle else 'no'
+    exp_name = f'experiment_shuffle_{shuffle_flag}_loss_{loss_criterion}_lr_{round(lr,6)}_lr_step_{round(lr_step_size,6)}_gamma_{round(lr_gamma,6)}_wdecay_{round(weight_decay,6)}_bsz_{batch_size}_epochs_{n_epochs}_relevance_{round(relevance_score,2)}_{L}x{n_feats_t}_{T}x{n_feats_v}_{random_hash}'
     exp_dir = f'{output_path}/experiments/{exp_name}'
-    utils.create_dir_if_not_exist(exp_dir)
-        
-    info_path = f'{exp_dir}/experiment_info.txt'
-    info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
-    utils.dump_textfile(info, info_path)
+    
+    if write_it:
+        utils.create_dir_if_not_exist(exp_dir)
+
+        info_path = f'{exp_dir}/experiment_info.txt'
+        info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
+        utils.dump_textfile(info, info_path)
     
     return exp_dir, exp_name
+
+# def log_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size):
+#     import uuid
+#     random_hash = uuid.uuid4().hex
+
+#     exp_name = f'experiment_{lr}_{lr_step_size}_{lr_gamma}_{weight_decay}_{batch_size}_{n_epochs}_{L}x{n_feats_t}_{T}x{n_feats_v}_{random_hash}'
+#     exp_dir = f'{output_path}/experiments/{exp_name}'
+#     utils.create_dir_if_not_exist(exp_dir)
+        
+#     info_path = f'{exp_dir}/experiment_info.txt'
+#     info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
+#     utils.dump_textfile(info, info_path)
+    
+#     return exp_dir, exp_name
 
 ########################################
 
@@ -149,7 +192,6 @@ def forward_multimodal(model_v, model_t, criterion, v, t, coefs=None, active_los
     active losses: enables training the models based on a subset of loss components
     '''
     joint_active,reconst_v_active,reconst_t_active,cross_v_active,cross_t_active,cycle_v_active,cycle_t_active = active_losses
-    
     # model_v and model_t are the corresponding models for video and captions respectively
     v = torch.tensor(v).float()
     t = torch.tensor(t).float()
@@ -160,36 +202,43 @@ def forward_multimodal(model_v, model_t, criterion, v, t, coefs=None, active_los
     # recons loss
     loss_recons_v = 0
     if reconst_v_active:
+        logger.debug('active loss: reconst v')
         v_reconst = model_v(v)
-        loss_recons_v = criterion(v_reconst, v) if loss_criterion=='mse' else criterion(v_reconst, v, target)
+        loss_recons_v = criterion(v_reconst, v) if loss_criterion!='cosine' else criterion(v_reconst, v, target)
         
     loss_recons_t = 0
     if reconst_t_active:
+        logger.debug('active loss: reconst t')
         t_reconst = model_t(t)
-        loss_recons_t = criterion(t_reconst, t) if loss_criterion=='mse' else criterion(t_reconst, t, target)
+        loss_recons_t = criterion(t_reconst, t) if loss_criterion!='cosine' else criterion(t_reconst, t, target)
 
     # joint loss
     loss_joint = 0
     if joint_active:
-        loss_joint = criterion(model_v.encoder(v), model_t.encoder(t)) if loss_criterion=='mse' else criterion(model_v.encoder(v), model_t.encoder(t), target)
+        logger.debug('active loss: joint')
+        loss_joint = criterion(model_v.encoder(v), model_t.encoder(t)) if loss_criterion!='cosine' else criterion(model_v.encoder(v), model_t.encoder(t), target)
 
     # cross loss
     loss_cross_t = 0
     if cross_t_active:
-        loss_cross_t = criterion(model_t.decoder(model_v.encoder(v)), t) if loss_criterion=='mse' else criterion(model_t.decoder(model_v.encoder(v)), t, target)
+        logger.debug('active loss: cross t')
+        loss_cross_t = criterion(model_t.decoder(model_v.encoder(v)), t) if loss_criterion!='cosine' else criterion(model_t.decoder(model_v.encoder(v)), t, target)
         
     loss_cross_v = 0
     if cross_v_active:
-        loss_cross_v = criterion(model_v.decoder(model_t.encoder(t)), v) if loss_criterion=='mse' else criterion(model_v.decoder(model_t.encoder(t)), v, target)
+        logger.debug('active loss: cross v')
+        loss_cross_v = criterion(model_v.decoder(model_t.encoder(t)), v) if loss_criterion!='cosine' else criterion(model_v.decoder(model_t.encoder(t)), v, target)
     
     # cycle loss
     loss_cycle_t = 0
     if cycle_t_active:
-        loss_cycle_t = criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))), t) if loss_criterion=='mse' else criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))), t, target)
+        logger.debug('active loss: cycle t')
+        loss_cycle_t = criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))), t) if loss_criterion!='cosine' else criterion(model_t.decoder(model_v.encoder(model_v.decoder(model_t.encoder(t)))), t, target)
         
     loss_cycle_v = 0
     if cycle_v_active:
-        loss_cycle_v = criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))), v) if loss_criterion=='mse' else criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))), v, target)
+        logger.debug('active loss: cycle v')
+        loss_cycle_v = criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))), v) if loss_criterion!='cosine' else criterion(model_v.decoder(model_t.encoder(model_t.decoder(model_v.encoder(v)))), v, target)
 
     # set coef hyperparams 
     a0, a1, a2, a3 = coefs
@@ -239,15 +288,24 @@ def evaluate_validation(data_loader, model_v, model_t, coefs, active_losses):
 ########################################
 
 def instantiate_loss_criterion(loss_criterion):
+    target_tensor = None
+    
     if loss_criterion == 'cosine':
         # target_tensor = torch.Tensor(1) # use 1 to train for bringing together corresponding (positive) vectors
         # target_tensor = torch.Tensor(-1) # use -1 to train for pushing apart dissimilar (negative) vectors
         criterion = nn.CosineEmbeddingLoss()
         # the cosine embedding loss takes a target y=1 for training positive (similar) vectors and y=-1 for training dissimilar (negative) vectors
         target_tensor = torch.Tensor(1)
+    elif loss_criterion == 'triplet':
+        criterion = TripletLoss() 
+#             margin=opt.margin,
+#             measure=opt.measure, 
+#             max_violation=opt.max_violation,
+#             cost_style=opt.cost_style, 
+#             direction=opt.direction)
     else:
         criterion = nn.MSELoss()
-        target_tensor = None
+        
         
     return criterion, target_tensor
 
@@ -351,7 +409,7 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
             optimizer_G_v.step()
             optimizer_G_t.step()
 
-            logger.info('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, num_samples, loss[-1].item()))
+            logger.debug('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, counter, num_samples, loss[-1].item()))
 
             counter = counter + 1 
 
@@ -369,10 +427,27 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
             # Mode collapse! Move on from this round of training!
             return None, None, None, None
         
+        metrics_train, _, _ = validation_metrics(data_loader_train, model_v, model_t)
+        recall_at_1_train,recall_at_5_train,recall_at_10_train = metrics_train[:3]
+
+        metrics_valid, _, _ = validation_metrics(data_loader_valid, model_v, model_t)
+        recall_at_1_valid,recall_at_5_valid,recall_at_10_valid = metrics_valid[:3]
+
+        writer.add_scalar(f'recall_at_1/train',recall_at_1_train, epoch)
+        writer.add_scalar(f'recall_at_5/train',recall_at_5_train, epoch)
+        writer.add_scalar(f'recall_at_10/train',recall_at_10_train, epoch)
+
+        writer.add_scalar(f'recall_at_1/valid',recall_at_1_valid, epoch)
+        writer.add_scalar(f'recall_at_5/valid',recall_at_5_valid, epoch)
+        writer.add_scalar(f'recall_at_10/valid',recall_at_10_valid, epoch)
+    
         # write train and valid loss to tensorboard
         for loss_idx, loss_type in zip(range(len(losses[0])),losses[0]):
-            writer.add_scalar(f'{loss_type}/train', losses_avg[-1][loss_idx], epoch)
-            writer.add_scalar(f'{loss_type}/valid', valid_losses_avg[loss_idx], epoch)
+            l_train = losses_avg[-1][loss_idx]
+            l_valid = valid_losses_avg[loss_idx]
+            if l_train > 0.0:
+                writer.add_scalar(f'{loss_type}/train', l_train, epoch)
+                writer.add_scalar(f'{loss_type}/valid', l_valid, epoch)
                        
     writer.flush()
     return model_v, model_t, losses, losses_avg
@@ -381,6 +456,9 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
 
 if __name__ == '__main__':
     ### python -W ignore train_dual_ae.py --n_epochs 15 --t_num_feats 512 --v_num_feats 2048 --batch_size_exp_min 5 --batch_size_exp_max 8
+    ### best result experiment: 
+    #     |  28       |  1.08     |  5.987    |  0.0001   |  1.0      |  0.0001   |
+
 
     parser = argparse.ArgumentParser ()
     parser.add_argument('--n_epochs', type = int, default = 20, help = 'number of iterations')
@@ -402,8 +480,8 @@ if __name__ == '__main__':
     
     parser.add_argument('--activate_joint', action='store_true', help = 'enables training using joint loss')
     
-    parser.add_argument('--activated_losses_binary_min', type=int, help = 'its binary indicates which losses to activate')
-    parser.add_argument('--activated_losses_binary_max', type=int, help = 'its binary indicates which losses to activate')
+    parser.add_argument('--activated_losses_binary_min', type=int, default = 127, help = 'its binary indicates which losses to activate')
+    parser.add_argument('--activated_losses_binary_max', type=int, default =127,  help = 'its binary indicates which losses to activate')
     
     # loss criterion
     parser.add_argument('--loss_criterion', default = 'mse') # MSELoss
@@ -436,8 +514,8 @@ if __name__ == '__main__':
     parser.add_argument('--v_feat_len', type = int, default = 1, help = 'length of feat vector')
     
     # bayesian optimization parameters
-    parser.add_argument('--bayes_n_iter', type = int, default = 50, help = 'bayesian optimization num iterations')
-    parser.add_argument('--bayes_init_points', type = int, default = 10, help = 'bayesian optimization init points')
+    parser.add_argument('--bayes_n_iter', type = int, default = 0, help = 'bayesian optimization num iterations')
+    parser.add_argument('--bayes_init_points', type = int, default = 1, help = 'bayesian optimization init points')
     
     # io params
     parser.add_argument('--repo_dir', default = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments')
@@ -447,8 +525,10 @@ if __name__ == '__main__':
     parser.add_argument('--valid_split_path', default = 'valid.split.pkl')
     parser.add_argument('--output_path', default = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output')
 
-    parser.add_argument('--relevance_score_min', type = float, default = 0.05, help = 'relevance score in range (0.0, 1.0)')
-    parser.add_argument('--relevance_score_max', type = float, default = 0.7, help = 'relevance score in range (0.0, 1.0)')
+    parser.add_argument('--relevance_score_min', type = float, default = 0.01, help = 'relevance score in range (0.0, 1.0)')
+    parser.add_argument('--relevance_score_max', type = float, default = 0.01, help = 'relevance score in range (0.0, 1.0)')
+    
+    parser.add_argument('--shuffle', dest='shuffle', action='store_true')
     
     args = parser.parse_args()
     
@@ -470,6 +550,8 @@ if __name__ == '__main__':
     
     batch_size_exp_min = args.batch_size_exp_min
     batch_size_exp_max = args.batch_size_exp_max
+    
+    shuffle = args.shuffle
     
     n_epochs = args.n_epochs
     n_train_samples = args.n_train_samples
