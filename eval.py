@@ -1,6 +1,6 @@
 from data_provider import TempuckeyVideoSentencePairsDataset as TempuckeyDataset
 from data_provider import Normalize_VideoSentencePair
-from layers.AE import AE
+from layers.v2t import V2T
 import utilities as utils
 
 from numpy import linalg
@@ -73,8 +73,8 @@ def encode_data(data_loader, model_v, model_t):
             embs_v = model_v.encoder(v)
     
         ids.extend(i)
-        embeddings_t.extend(embs_t.numpy())
-        embeddings_v.extend(embs_v.numpy())
+        embeddings_t.extend(embs_t.cpu().numpy())
+        embeddings_v.extend(embs_v.cpu().numpy())
     
     embeddings_v = torch.from_numpy(np.array(embeddings_v)).squeeze()
     embeddings_t = torch.from_numpy(np.array(embeddings_t)).squeeze()
@@ -132,7 +132,7 @@ def calc_l2_distance(embs_mode1, embs_mode2):
 
 
 def load_model(model_path, n_feats):
-    model = AE(n_feats)
+    model = V2T(n_feats)
     model_file = open(model_path, 'rb')
     model_sd = torch.load(model_file)
     model.load_state_dict(model_sd)
@@ -191,23 +191,23 @@ if __name__ == '__main__':
     model_v_path = f'{repo_dir}/output/experiments/{experiment_name}/model_v_{experiment_name}.sd'
     model_t_path = f'{repo_dir}/output/experiments/{experiment_name}/model_t_{experiment_name}.sd'
 
-    model_v = load_model(model_v_path, args.v_num_feats)
+    #model_v = load_model(model_v_path, args.v_num_feats)
     model_t = load_model(model_t_path, args.t_num_feats)
     
     data_ids = utils.load_picklefile(split_path)
     dataset = TempuckeyDataset(v_feats_dir, t_feats_path, data_ids, video_feat_seq_len=1, sent_feat_seq_len=1, transform=None)
     data_loader = torch.utils.data.DataLoader(dataset, **dl_params)
     
-    ids, embs_v, embs_t = encode_data(data_loader, model_v, model_t)
+    ids, embs_v, embs_t = encode_data_v2t(data_loader, model_t)
     
     dist_matrix_v2t = calc_l2_distance(embs_v, embs_t)
     metrics_v2t, ranks_v2t = get_metrics(dist_matrix_v2t)
     
-    dist_matrix_t2v = calc_l2_distance(embs_t, embs_v)
-    metrics_t2v, ranks_t2v = get_metrics(dist_matrix_t2v)
+#     dist_matrix_t2v = calc_l2_distance(embs_t, embs_v)
+#     metrics_t2v, ranks_t2v = get_metrics(dist_matrix_t2v)
 
     print(metrics_v2t)
-    print(metrics_t2v)
+#     print(metrics_t2v)
     
     import pickle as pkl
     sents = pkl.load(open('/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments/sentences.pkl','rb'))

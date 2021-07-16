@@ -189,8 +189,8 @@ if __name__ == '__main__':
     repo_dir = args.repo_dir
     output_path = args.output_dir
     
-    experiment_names = [     
-'experiment_0.005053182667988411_1.3094966900369656_0.1_0.007414787983815832_16_2000_1x512_1x2048_01ee777a7fb7403eb16d8ec2fdfbbfa9']
+    experiment_names = [experiment_name]     
+# 'experiment_0.005053182667988411_1.3094966900369656_0.1_0.007414787983815832_16_2000_1x512_1x2048_01ee777a7fb7403eb16d8ec2fdfbbfa9']
     
     # evaluate model using different noise thresholds
     for relevance_score in [0.0,0.1,0.2,0.3,0.4,0.5,0.6,0.7]:

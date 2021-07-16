@@ -44,6 +44,8 @@ class TempuckeyVideoSentencePairsDataset(Dataset):
                
         if self.relevance_score > 0.0:
             self.split_ids = filter_dataset_by_relevance_score(self.split_ids, self.relevance_score)
+            
+        print(f'len dataset: {len(self.split_ids)}')
         
     def __len__(self):
         return len(self.split_ids)
