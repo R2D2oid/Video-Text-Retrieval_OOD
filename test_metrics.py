@@ -5,13 +5,11 @@ import argparse
 
 def get_results(model, split_path, v_feats_dir, t_feats_path, relevance_score, dl_params):
     dataloader = get_data_loader(split_path, v_feats_dir, t_feats_path, relevance_score, dl_params)
-
     metrics, _, _ = validation_metrics(dataloader, model)
-    import pdb
-    pdb.set_trace()
 
     return metrics
 
+# python test_metrics.py --test_split_path test.clean.split.pkl
 if __name__ == '__main__':
     parser = argparse.ArgumentParser ()
         
