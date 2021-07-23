@@ -14,6 +14,7 @@ from models.BT import BarlowTwins as BT
 from data_provider import TempuckeyVideoSentencePairsDataset as TempuckeyDataset
 from data_provider import Normalize_VideoSentencePair
 from utils.train_utils import get_experiment_info, log_experiment_info, save_experiment, get_dataloader
+from utils.sys_utils import create_dir_if_not_exist
 
 # init tensorboard
 writer = SummaryWriter('runs/')
@@ -58,12 +59,7 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp, relevance_sco
     # train 
     torch.set_grad_enabled(True)
     model, train_loss = train_model(dataloader_train, dataloader_valid, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, exp_name)
-    
-    # loss is nan
-    if model is None:
-        logger.warning('NaN encountered in loss... Moving on to the next iteration of bayes_opt!')
-        return -10
-    
+      
     # calculate loss on validation
     valid_loss = evaluate_validation(dataloader_valid, model)
        
@@ -76,6 +72,9 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp, relevance_sco
 
     logger.warning(f'loss train: {train_loss}')
     
+    output_path_ = f'{output_path}/{exp_name}'
+    create_dir_if_not_exist(output_path_)
+    model.save(output_path_)
     return valid_loss
 
 
@@ -107,11 +106,15 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
     model = BT(args)
     model.to(device)
     
-    optimizer = torch.optim.Adam(model.parameters(), lr = lr, weight_decay = weight_decay)
-    lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size = lr_step_size, gamma = lr_gamma)
-    
     loader = data_loader_train
     scaler = torch.cuda.amp.GradScaler()
+    
+    optimizer = torch.optim.Adam(model.parameters(), lr = lr, weight_decay = weight_decay)
+    # Stepwise LR
+    # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size = lr_step_size, gamma = lr_gamma)
+    # CosineAnnealing LR
+    lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, n_epochs*len(loader), eta_min=0, last_epoch=-1, verbose=False)
+    
 
     avg_loss = []
     
@@ -133,19 +136,13 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
                              step=step,
                              loss=loss.item(),
                              time=int(time.time() - start_time))
-                #print(stats)
-                    
-           
-            # logger.debug('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1, n_epochs, step, num_samples, loss.item()))
-        
+                # logger.debug('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1,n_epochs,step,num_samples,loss.item()))
+                # logger.info(f'epoch[{epoch + 1}/{n_epochs}]\n\t loss train: {loss.item()}')
+
             lr_value = lr_scheduler.optimizer.param_groups[0]['lr']
             writer.add_scalar(f'{exp_name}/train/lr', lr_value, epoch)
             lr_scheduler.step()
 
-            #logger.info(f'epoch[{epoch + 1}/{n_epochs}]')
-
-            #logger.info(f'    loss train: {loss.item()}')
-            
             total_loss+=loss.item()
 
             if flag == True:
@@ -209,7 +206,7 @@ if __name__ == '__main__':
     parser.add_argument('--text_feats_path', default = 'feats/text/universal/sentence_feats.pkl')
     parser.add_argument('--train_split_path', default = 'train_valid.split.pkl')    
     parser.add_argument('--valid_split_path', default = 'valid.split.pkl')
-    parser.add_argument('--output_path', default = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output')
+    parser.add_argument('--output_path', default = '/usr/local/extstore01/zahra/VTR_OOD/output')
 
     parser.add_argument('--relevance_score_min', type = float, default = 0.05, help = 'relevance score in range (0.0, 1.0)')
     parser.add_argument('--relevance_score_max', type = float, default = 0.7, help = 'relevance score in range (0.0, 1.0)')
