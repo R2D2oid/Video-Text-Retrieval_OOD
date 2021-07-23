@@ -76,7 +76,15 @@ class TempuckeyVideoSentencePairsDataset(Dataset):
 
         sample = {'id': idx_name ,'video': torch.tensor(sample['video']).float(), 'sent': torch.tensor(sample['sent']).float()}
         
-        return sample
+#         return sample
+        
+        v = sample['video']
+        t = sample['sent']
+
+#         v = torch.tensor(v).float()
+#         t = torch.tensor(t).float()
+        
+        return (v,t)
 
     def get_dataset_mean_std(self):
         '''
