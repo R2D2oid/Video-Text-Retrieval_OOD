@@ -1,4 +1,4 @@
-import utilities as utils
+import sys_utils as utils
 from data_provider import TempuckeyVideoSentencePairsDataset as TempuckeyDataset
 import torch
 import numpy as np
