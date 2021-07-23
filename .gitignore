@@ -4,6 +4,7 @@ env_vtr/*
 output/experiments
 .ipynb_checkpoints/
 output/sentence_segments/
+output/
 runs/*
 *.ipynb
 archives/*
