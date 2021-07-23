@@ -1,7 +1,7 @@
 import torch
 import pickle as pkl
 from torch.utils.data import Dataset
-import utilities as utils
+import utils.sys_utils as utils
 import numpy as np
 
 class TempuckeyVideoSentencePairsDataset(Dataset):
