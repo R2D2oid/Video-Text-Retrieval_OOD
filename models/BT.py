@@ -76,6 +76,10 @@ class BarlowTwins(nn.Module):
         loss = on_diag + self.args.lambd * off_diag
         return loss
     
+    def save(self, path_):
+        torch.save(self.v2t_1.state_dict(), f'{path_}/model_v2t.sd')
+        torch.save(self.t2v_2.state_dict(), f'{path_}/model_t2v.sd')
+    
 def off_diagonal(x):
     # return a flattened view of the off-diagonal elements of a square matrix
     n, m = x.shape
