@@ -10,11 +10,12 @@ import logging
 from datetime import datetime as dt
 import utils.sys_utils as utils
 import time
-from models.BT import BarlowTwins as BT
+from models.VT import VT 
 from data_provider import TempuckeyVideoSentencePairsDataset as TempuckeyDataset
 from data_provider import Normalize_VideoSentencePair
 from utils.train_utils import get_experiment_info, log_experiment_info, save_experiment, get_dataloader
 from utils.sys_utils import create_dir_if_not_exist
+from models.contrastive_loss import ContrastiveLoss
 
 # init tensorboard
 writer = SummaryWriter('runs/')
@@ -44,6 +45,22 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp, relevance_sco
                  'num_workers': 1}
     
     lr_step_size = int(lr_step_size)
+        
+    experiment_name = 'experiment_shuffle_yes_loss_None_lr_0.000152_lr_step_353_gamma_0.9_wdecay_0.000711_bsz_128_epochs_100_relevance_0.0_1x512_1x2048_87c79017507546029863a4b152ad2b7b'
+
+    model_v_path = f'output/experiments/{experiment_name}/model_v2t.sd'
+    model_t_path = f'output/experiments/{experiment_name}/model_t2v.sd'
+    
+    model_vt = VT(args)
+
+    model_v2r_file = open(model_v_path, 'rb')
+    model_t2r_file = open(model_t_path, 'rb')
+
+    model_v2r_sd = torch.load(model_v2r_file)
+    model_t2r_sd = torch.load(model_t2r_file)
+
+    model_vt.v2r.load_state_dict(model_v2r_sd)
+    model_vt.t2r.load_state_dict(model_t2r_sd)
     
     # display experiment info
     exp_info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
@@ -103,7 +120,7 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
     flag = True 
     
     ### instantiate model
-    model = BT(args)
+    model = VT(args)
     model.to(device)
     
     loader = data_loader_train
@@ -115,7 +132,6 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
     # CosineAnnealing LR
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, n_epochs*len(loader), eta_min=0, last_epoch=-1, verbose=False)
     
-
     avg_loss = []
     
     start_time = time.time()
@@ -127,6 +143,7 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
             
             optimizer.zero_grad()
             loss = model.forward(y1, y2)
+
             scaler.scale(loss).backward()
             scaler.step(optimizer)
             scaler.update()
@@ -136,6 +153,7 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
                              step=step,
                              loss=loss.item(),
                              time=int(time.time() - start_time))
+                print(stats)
                 # logger.debug('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1,n_epochs,step,num_samples,loss.item()))
                 # logger.info(f'epoch[{epoch + 1}/{n_epochs}]\n\t loss train: {loss.item()}')
 
@@ -159,9 +177,6 @@ def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_d
     return model, avg_loss.mean()
 
 if __name__ == '__main__':
-    ### python -W ignore train_v2t.py --n_epochs 15 --t_num_feats 512 --v_num_feats 2048 
-    # python -W ignore train_bt.py --n_epochs 10 --t_num_feats 512 --v_num_feats 2048 --batch_size_exp_min 7 --batch_size_exp_max 7 --lr_min 0.0001 --lr_max 0.001 --weight_decay_min 0.00001 --weight_decay_max 0.001 --lr_step_size_min 50 --lr_step_size_max 400 --lr_gamma 0.9 --relevance_score_min 0.00001 --relevance_score_max 0.0001 --shuffle
-
     parser = argparse.ArgumentParser ()
     parser.add_argument('--n_epochs', type = int, default = 20, help = 'number of iterations')
     parser.add_argument('--n_train_samples', type = int, default = None, help = 'number of training samples')
@@ -222,7 +237,7 @@ if __name__ == '__main__':
     args = parser.parse_args()
     
     logger.info(args)
-
+    
     relevance_score_min = args.relevance_score_min
     relevance_score_max = args.relevance_score_max
     
