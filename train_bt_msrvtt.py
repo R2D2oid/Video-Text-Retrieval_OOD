@@ -1,17 +1,17 @@
 import argparse
 import math
+import logging
+import time
+import numpy as np
+import pandas as pd
 import torch 
 import torch.nn as nn
 from torch.utils.tensorboard import SummaryWriter
-import numpy as np
-import pandas as pd
 from bayes_opt import BayesianOptimization
-import logging
 from datetime import datetime as dt
-import utils.sys_utils as utils
-import time
 from torchvision import transforms
 
+# import utils.sys_utils as utils
 from models.BT import BarlowTwins as BT
 from msrvtt_dataset import MSRVTTDataset as MSRVTT
 from msrvtt_dataset import Standardize_VideoSentencePair, ToTensor_VideoSentencePair
@@ -122,7 +122,6 @@ def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_e
     # CosineAnnealing LR
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, n_epochs*len(loader), eta_min=0, last_epoch=-1)
     
-
     avg_loss = []
     
     start_time = time.time()
@@ -138,13 +137,13 @@ def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_e
             scaler.step(optimizer)
             scaler.update()
                       
-            if step % args.print_freq == 0:
-                stats = dict(epoch=epoch, 
-                             step=step,
-                             loss=loss.item(),
-                             time=int(time.time() - start_time))
-                #logger.debug('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1,n_epochs,step,num_samples,loss.item()))
-                #logger.info(f'epoch[{epoch + 1}/{n_epochs}]\n\t loss train: {loss.item()}')
+#             if step % args.print_freq == 0:
+#                 stats = dict(epoch=epoch, 
+#                              step=step,
+#                              loss=loss.item(),
+#                              time=int(time.time() - start_time))
+#                 #logger.debug('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1,n_epochs,step,num_samples,loss.item()))
+#                 #logger.info(f'epoch[{epoch + 1}/{n_epochs}]\n\t loss train: {loss.item()}')
 
             lr_value = lr_scheduler.optimizer.param_groups[0]['lr']
             writer.add_scalar(f'{exp_name}/train/lr', lr_value, epoch)
