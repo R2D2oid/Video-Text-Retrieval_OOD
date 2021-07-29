@@ -1,15 +1,10 @@
-from model_utils import validation_metrics, normalize_metrics, get_data_loader
-from layers.v2t import V2T
 import torch
 import argparse
-
-def get_results(model, split_path, v_feats_dir, t_feats_path, relevance_score, dl_params):
-    dataloader = get_data_loader(split_path, v_feats_dir, t_feats_path, relevance_score, dl_params)
-    metrics, _, _ = validation_metrics(dataloader, model)
-
-    return metrics
-
-# python test_metrics.py --test_split_path test.clean.split.pkl
+from utils.train_utils import validation_metrics, normalize_metrics, get_dataloader
+from eval import get_metrics, calc_l2_distance
+from models.VT import VT
+                                                 
+# python test_metrics.py --test_split_path test.clean.split.pkl --batch-size 128
 if __name__ == '__main__':
     parser = argparse.ArgumentParser ()
         
@@ -17,17 +12,23 @@ if __name__ == '__main__':
     parser.add_argument('--t_num_feats', type = int, default = 512, help = 'number of feats in each vector')
     parser.add_argument('--v_num_feats', type = int, default = 2048, help = 'number of feats in each vector')
     
+    parser.add_argument('--batch-size', type = int, default = 128, help = 'number of feats in each vector')
+
     # io params
     parser.add_argument('--repo_dir', default = '/usr/local/data02/zahra/datasets/Tempuckey/sentence_segments')
     parser.add_argument('--video_feats_dir', default = 'feats/video/r2plus1d_resnet50_kinetics400')
     parser.add_argument('--text_feats_path', default = 'feats/text/universal/sentence_feats.pkl')
     parser.add_argument('--test_split_path', default = 'test.split.pkl')
-    parser.add_argument('--output_path', default = '/usr/local/extstore01/zahra/Video-Text-Retrieval_OOD/output')
-    parser.add_argument('--model_name', default = 'experiment_shuffle_yes_loss_mse_lr_0.000956_lr_step_306_gamma_0.9_wdecay_0.000164_bsz_128_epochs_500_relevance_0.3_1x512_1x2048_f9f7b433923b4d97b0c6e75062bf6931')
+    parser.add_argument('--output_path', default = '/usr/local/extstore01/zahra/VTR_OOD/output')
     
+    parser.add_argument('--projector', default='1024-1024-1024', type=str, metavar='MLP', help='projector MLP')
+
     args = parser.parse_args()
         
-    batch_size = 128
+    experiment_name = 'experiment_shuffle_no_loss_None_lr_0.000694_lr_step_140_gamma_0.8_wdecay_0.000614_bsz_32_epochs_20_relevance_0.59_1x512_1x2048_81c7da41544446279c801985a7b20ef8'
+    model_path = f'/usr/local/extstore01/zahra/VTR_OOD/output/{experiment_name}/model_vt.sd'
+    
+    batch_size = args.batch_size
     relevance_score = 0.0
     shuffle = False
     
@@ -43,20 +44,38 @@ if __name__ == '__main__':
     output_path = args.output_path
     v_feats_dir = f'{repo_dir}/{args.video_feats_dir}'
     t_feats_path = f'{repo_dir}/{args.text_feats_path}'
-    
-    model_path = f'output/experiments/{args.model_name}/model_v_{args.model_name}.sd'
-    
+        
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    
-    ### instantiate t2v model
-    model_v = V2T(n_feats_v)
-    model_v.load_state_dict(torch.load(model_path))
-    model_v.to(device)
-    model_v.eval()
-    
-    output = get_results(model_v, test_split_path, v_feats_dir, t_feats_path, relevance_score, dl_params)
-    print(output)
 
+    model = VT(args)
+    model.load_state_dict(torch.load(model_path))
+    model.to(device)
+    model.eval()
+
+    dataloader = get_dataloader(test_split_path, v_feats_dir, t_feats_path, relevance_score, dl_params)
+
+    embeddings_v = []
+    embeddings_t = []
+    
+    for y1,y2 in dataloader:
+        y1 = y1.cuda()
+        y2 = y2.cuda()
+        v_rep,t_rep = model.get_v_and_t_representation(y1,y2)
+        v_rep = v_rep.detach().cpu()
+        t_rep = t_rep.detach().cpu()
+
+        embeddings_v.extend(v_rep)
+        embeddings_t.extend(t_rep)
+        
+        break
+
+    embeddings_v = torch.stack(embeddings_v, dim=0).numpy()
+    embeddings_t = torch.stack(embeddings_t, dim=0).numpy()
+    dist_matrix = calc_l2_distance(embeddings_v, embeddings_t)
+    metrics, ranks = get_metrics(dist_matrix)
+    metrics_norm = normalize_metrics(metrics, n_smples_experiment=dataloader.dataset.__len__(), n_smples_baseline = 1000)
+    
+    print(metrics_norm)
 
     
     
