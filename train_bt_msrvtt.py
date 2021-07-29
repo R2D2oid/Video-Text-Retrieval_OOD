@@ -10,9 +10,11 @@ import logging
 from datetime import datetime as dt
 import utils.sys_utils as utils
 import time
+from torchvision import transforms
+
 from models.BT import BarlowTwins as BT
 from msrvtt_dataset import MSRVTTDataset as MSRVTT
-from data_provider import Normalize_VideoSentencePair
+from msrvtt_dataset import Standardize_VideoSentencePair, ToTensor_VideoSentencePair
 from utils.train_utils import get_experiment_info, log_experiment_info_msrvtt, save_experiment, get_dataloader
 from utils.sys_utils import create_dir_if_not_exist
 
@@ -51,6 +53,11 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
     
     # get data loaders for train and valid sets
     dataset_trainval = MSRVTT(vid_feats_dir=v_feats_dir, txt_feats_path=t_feats_path, ids_path=trainval_split_path, transform=None)
+    dataset_stats = dataset_trainval.get_dataset_mean_std()
+    standardize = Standardize_VideoSentencePair(dataset_stats)
+    trnsfrm = transforms.Compose([standardize, ToTensor_VideoSentencePair()])
+    dataset_trainval = MSRVTT(vid_feats_dir=v_feats_dir, txt_feats_path=t_feats_path, ids_path=trainval_split_path, transform=trnsfrm)
+
     dataloader_trainval = torch.utils.data.DataLoader(dataset_trainval, **dl_params)
 
     # get experiment name 
@@ -58,7 +65,7 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
     
     # train 
     torch.set_grad_enabled(True)
-    model, train_loss = train_model(dataloader_trainval, None, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, exp_name)
+    model, train_loss = train_model(dataloader_trainval, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, exp_name)
       
     # calculate loss on validation
     # valid_loss = evaluate_validation(dataloader_valid, model)
@@ -95,7 +102,7 @@ def evaluate_validation(dataloader, model):
     return total_loss/len(dataloader)
     
 
-def train_model(data_loader_train, data_loader_valid, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, exp_name):   
+def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, exp_name):   
              
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     

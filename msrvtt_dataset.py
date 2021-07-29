@@ -67,12 +67,69 @@ class MSRVTTDataset(Dataset):
         sen_id = self.sen_id[idx] 
         vid_id = self.s2v_id[sen_id]
         
-        vid_feat = self.videos[vid_id].squeeze()
-        snt_feat = self.sents[sen_id].squeeze()
+        v = self.videos[vid_id].squeeze()
+        t = self.sents[sen_id].squeeze()
         
-        sample = {'id': vid_id+'_'+sen_id, 'video': torch.tensor(vid_feat).float(), 'sent': torch.tensor(snt_feat).float()}
+        v = torch.tensor(v).float()
+        t = torch.tensor(t).float()
         
-        v = sample['video']
-        t = sample['sent']
+        # sample = {'id': vid_id+'_'+sen_id, 'video': torch.tensor(vid_feat).float(), 'sent': torch.tensor(snt_feat).float()}
+
+        if self.transform is not None:
+            (v,t) = self.transform((v,t))
+            
+        v = v.squeeze()
+        t = t.squeeze()
+        
+        return (v,t)
+    
+    def get_dataset_mean_std(self):
+        '''
+        Computes mean and standard deviation for video and sentence features, separately.
+        '''
+        # videos
+        feats = np.array([f for f in self.videos.values()])
+
+        v_mean = feats.mean(axis=0)
+        v_std  = feats.std(axis=0)
+
+        # sentences
+        feats = np.array([f for f in self.sents.values()])
+
+        t_mean = feats.mean(axis=0)
+        t_std  = feats.std(axis=0)
+
+        return {'videos': (v_mean, v_std), 'sents': (t_mean, t_std)}
+
+    
+class Standardize_VideoSentencePair(object):
+    '''
+    Standardizes the input sample using the dataset mean and std
+    '''
+    
+    def __init__(self, dataset_stats):
+        self.v_mean, self.v_std = dataset_stats['videos']
+        self.t_mean, self.t_std = dataset_stats['sents']
+        
+    def __call__(self, sample):
+                
+        v,t = sample
+        
+        v = (v - self.v_mean)/self.v_std
+        t = (t - self.t_mean)/self.t_std
+
+        return (v,t)
+    
+    
+class ToTensor_VideoSentencePair(object):
+    '''
+    Converts video sentence pair sample to tensor
+    '''
+    
+    def __call__(self, sample):
+        v,t = sample
+        
+        v = torch.tensor(v)
+        t = torch.tensor(t)
         
         return (v,t)
