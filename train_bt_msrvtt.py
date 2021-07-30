@@ -210,7 +210,7 @@ if __name__ == '__main__':
     # io params
     parser.add_argument('--repo_dir', default = '/usr/local/extstore01/zahra/datasets/MSRVTT')
     parser.add_argument('--video_feats_dir', default = 'feats/video/r2plus1d_TrainVal')
-    parser.add_argument('--text_feats_path', default = 'feats/text/msrvtt_captions_np.pkl')
+    parser.add_argument('--text_feats_path', default = 'feats/text/msrvtt_captions_universal_trainval.pkl')
     parser.add_argument('--trainval_split_path', default = 'TrainVal_videoid_sentid.txt')    
     parser.add_argument('--output_path', default = '/usr/local/extstore01/zahra/VTR_OOD/output_msrvtt')
     
