@@ -1,5 +1,9 @@
-import utils.sys_utils as utils
 from data_provider import TempuckeyVideoSentencePairsDataset as TempuckeyDataset
+from msrvtt_dataset import MSRVTTDataset as MSRVTT
+from msrvtt_dataset import Standardize_VideoSentencePair, ToTensor_VideoSentencePair
+from torchvision import transforms
+import utils.sys_utils as utils
+
 import torch
 import numpy as np
 
@@ -83,3 +87,14 @@ def get_dataloader(split_path, v_feats_dir, t_feats_path, relevance_score, dl_pa
     data_loader = torch.utils.data.DataLoader(dataset, **dl_params)
     
     return data_loader
+
+
+def get_dataloader_msrvtt(split_path, v_feats_dir, t_feats_path, dl_params, ):
+    dataset_stats = utils.load_picklefile('../datasets/MSRVTT/dataset_stats.pkl')
+    standardize = Standardize_VideoSentencePair(dataset_stats)
+    trnsfrm = transforms.Compose([standardize, ToTensor_VideoSentencePair()])
+    dataset = MSRVTT(vid_feats_dir=v_feats_dir, txt_feats_path=t_feats_path, ids_path=split_path, transform=trnsfrm)
+
+    dataloader = torch.utils.data.DataLoader(dataset, **dl_params)
+
+    return dataloader
