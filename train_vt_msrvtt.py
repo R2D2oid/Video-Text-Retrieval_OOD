@@ -46,21 +46,22 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
     
     lr_step_size = int(lr_step_size)
     
-    pretrained_ssl_experiment_name = 'experiment_shuffle_yes_loss_None_lr_0.000956_lr_step_306_gamma_0.9_wdecay_0.000603_bsz_128_epochs_1000_1x512_1x2048_f53a80d0575a473885e22942c4353eaf'
-    
-    model_v_path = f'output_msrvtt/experiments/{pretrained_ssl_experiment_name}/model_v2t.sd'
-    model_t_path = f'output_msrvtt/experiments/{pretrained_ssl_experiment_name}/model_t2v.sd'
-    
     model_vt = VT(args)
 
-    model_v2r_file = open(model_v_path, 'rb')
-    model_t2r_file = open(model_t_path, 'rb')
+    if init_pretrained:
+        pretrained_ssl_experiment_name = 'experiment_shuffle_yes_loss_None_lr_0.000956_lr_step_306_gamma_0.9_wdecay_0.000603_bsz_128_epochs_1000_1x512_1x2048_f53a80d0575a473885e22942c4353eaf'
 
-    model_v2r_sd = torch.load(model_v2r_file)
-    model_t2r_sd = torch.load(model_t2r_file)
+        model_v_path = f'output_msrvtt/experiments/{pretrained_ssl_experiment_name}/model_v2t.sd'
+        model_t_path = f'output_msrvtt/experiments/{pretrained_ssl_experiment_name}/model_t2v.sd'
+        
+        model_v2r_file = open(model_v_path, 'rb')
+        model_t2r_file = open(model_t_path, 'rb')
 
-    model_vt.v2r.load_state_dict(model_v2r_sd)
-    model_vt.t2r.load_state_dict(model_t2r_sd)
+        model_v2r_sd = torch.load(model_v2r_file)
+        model_t2r_sd = torch.load(model_t2r_file)
+
+        model_vt.v2r.load_state_dict(model_v2r_sd)
+        model_vt.t2r.load_state_dict(model_t2r_sd)
     
     # display experiment info
     exp_info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
@@ -168,7 +169,7 @@ def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_e
     writer.flush()
     return model, avg_loss.mean()
 
-# python -W ignore train_vt_msrvtt.py --n_epochs 10 --t_num_feats 512 --v_num_feats 2048 --batch_size_exp_min 7 --batch_size_exp_max 7 --lr_min 0.0001 --lr_max 0.001 --weight_decay_min 0.00001 --weight_decay_max 0.001 --lr_step_size_min 50 --lr_step_size_max 400 --lr_gamma 0.9 --shuffle
+# python -W ignore train_vt_msrvtt.py --n_epochs 10 --t_num_feats 512 --v_num_feats 2048 --batch_size_exp_min 7 --batch_size_exp_max 7 --lr_min 0.0001 --lr_max 0.001 --weight_decay_min 0.00001 --weight_decay_max 0.001 --lr_step_size_min 50 --lr_step_size_max 400 --lr_gamma 0.9 --shuffle --init-pretrained
 if __name__ == '__main__':
     parser = argparse.ArgumentParser ()
     parser.add_argument('--n_epochs', type = int, default = 20, help = 'number of iterations')
@@ -230,6 +231,9 @@ if __name__ == '__main__':
     
     parser.add_argument('--print-freq', default=1, type=int, metavar='N', help='print frequency')
     
+    parser.add_argument('--init-pretrained', action='store_true')
+    
+    
     args = parser.parse_args()
     
     logger.info(args)
@@ -267,6 +271,8 @@ if __name__ == '__main__':
     
     v_feats_dir_test = f'{repo_dir}/{args.video_feats_dir_test}'
     t_feats_path_test = f'{repo_dir}/{args.text_feats_path_test}'
+    
+    init_pretrained = args.init_pretrained
     
     ## bayes opt
     bayes_init_points = args.bayes_init_points
