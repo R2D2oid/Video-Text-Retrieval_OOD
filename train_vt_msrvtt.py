@@ -68,7 +68,7 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
     
     # get data loaders for train and valid sets
     dataloader_trainval = get_dataloader_msrvtt(trainval_split_path, v_feats_dir_trainval, t_feats_path_trainval, dl_params)
-    dataloader_test = get_dataloader_msrvtt(test_split_path, v_feats_dir_trainval, t_feats_path_test, dl_params)
+    #dataloader_test = get_dataloader_msrvtt(test_split_path, v_feats_dir_trainval, t_feats_path_test, dl_params)
     
     # get experiment name 
     _, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, shuffle, loss_criterion, write_it=False)
@@ -78,7 +78,7 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
     model, train_loss = train_model(dataloader_trainval, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, exp_name)
             
     # calculate loss on validation
-    valid_loss = evaluate_validation(dataloader_test, model)
+    #valid_loss = evaluate_validation(dataloader_test, model)
     
     # log experiment meta data 
     exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, shuffle, loss_criterion = None, write_it=True)
