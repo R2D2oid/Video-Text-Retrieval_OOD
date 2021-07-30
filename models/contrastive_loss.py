@@ -43,6 +43,7 @@ class ContrastiveLoss(nn.Module):
             torch.matmul(anchor_feature, contrast_feature.T),
             self.temperature)
         logits = anchor_dot_contrast
+        logits = torch.clamp(logits, min=-20, max=20) # clip large magnitudes to avoid nans
         
         # tile mask
         mask = mask.repeat(anchor_count, contrast_count)

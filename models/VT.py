@@ -5,6 +5,8 @@ partially adopted from BarlowTwins at https://github.com/facebookresearch/barlow
 import torch.nn as nn
 import torch
 
+from models.contrastive_loss import ContrastiveLoss
+
 class VT(nn.Module):
     def __init__(self, args):
         super().__init__()
@@ -64,9 +66,9 @@ class VT(nn.Module):
         # normalization layer for the representations z1 and z2
         self.bn = nn.BatchNorm1d(sizes[-1], affine=False)
         
-        self.loss_criterion = 'mse'
+        self.loss_criterion = 'contrastive'
         if self.loss_criterion == 'contrastive':
-            self.criterion = ContrastiveLoss(temperature=temperature, contrast_mode='all', base_temperature=temperature)
+            self.criterion = ContrastiveLoss(temperature=0.5, contrast_mode='all', base_temperature=1)
         elif self.loss_criterion == 'cosine':
             self.criterion = nn.CosineEmbeddingLoss()
             # the cosine embedding loss takes a target y=1 for training positive (similar) vectors 
@@ -84,7 +86,9 @@ class VT(nn.Module):
         proj_t2r = self.bn(z2)
         
         if self.loss_criterion == 'contrastive':
-            loss = self.criterion(torch.cat([proj_v2r,proj_t2r], dim=1))
+            p_v = proj_v2r.unsqueeze(dim=1)
+            p_t = proj_t2r.unsqueeze(dim=1)
+            loss = self.criterion(torch.cat([p_v,p_t], dim=1))
         elif self.loss_criterion == 'cosine':
             loss = self.criterion(proj_v2r, proj_t2r, target_tensor)
         else: # mse
