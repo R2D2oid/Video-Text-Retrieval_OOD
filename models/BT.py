@@ -79,6 +79,12 @@ class BarlowTwins(nn.Module):
     def save(self, path_):
         torch.save(self.v2t_1.state_dict(), f'{path_}/model_v2t.sd')
         torch.save(self.t2v_2.state_dict(), f'{path_}/model_t2v.sd')
+        
+    def get_v_and_t_representation(self, y1, y2):
+        proj_v2r = self.v2t_1(y1)
+        proj_t2r = self.t2v_2(y2)
+        
+        return proj_v2r, proj_t2r
     
 def off_diagonal(x):
     # return a flattened view of the off-diagonal elements of a square matrix

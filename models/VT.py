@@ -98,12 +98,11 @@ class VT(nn.Module):
     
     def save(self, path_):
         torch.save(self.state_dict(), f'{path_}/model_vt.sd')
-    
-    def get_v_and_t_representation(self, y1, y2):
-        z1 = self.projector(self.v2r(y1))
-        z2 = self.projector(self.t2r(y2))
 
-        proj_v2r = self.bn(z1)
-        proj_t2r = self.bn(z2)
+    def get_v_and_t_representation(self, y1, y2):
+        # proj_v2r = self.bn(self.projector(self.v2r(y1)))
+        # proj_t2r = self.bn(self.projector(self.t2r(y2)))
+        proj_v2r = self.v2r(y1)
+        proj_t2r = self.t2r(y2)
         
         return proj_v2r, proj_t2r
