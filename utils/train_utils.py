@@ -89,7 +89,7 @@ def get_dataloader(split_path, v_feats_dir, t_feats_path, relevance_score, dl_pa
     return data_loader
 
 
-def get_dataloader_msrvtt(split_path, v_feats_dir, t_feats_path, dl_params, ):
+def get_dataloader_msrvtt(split_path, v_feats_dir, t_feats_path, dl_params):
     dataset_stats = utils.load_picklefile('../datasets/MSRVTT/dataset_stats.pkl')
     standardize = Standardize_VideoSentencePair(dataset_stats)
     trnsfrm = transforms.Compose([standardize, ToTensor_VideoSentencePair()])
