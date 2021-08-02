@@ -74,7 +74,6 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
     # log experiment meta data 
     exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, shuffle, loss_criterion = None, write_it=True)
     
-    '''
     # save trained model, training losses, and validation losses
     save_experiment(model, None, train_loss, exp_dir, exp_name)
     logger.warning(f'saved model and train/valid loss to {exp_dir}')
@@ -84,9 +83,8 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
     output_path_ = f'{output_path}/experiments/{exp_name}'
     create_dir_if_not_exist(output_path_)
     model.save(output_path_)
-    '''
-    return train_loss
 
+    return train_loss
 
 def evaluate_validation(dataloader, model):
     model.eval()
@@ -104,6 +102,27 @@ def evaluate_validation(dataloader, model):
         
     return total_loss/len(dataloader)
     
+
+def early_stop(model, best, current_loss, max_target_loss, stop_counter, exp_dir, exp_name):
+    stop = False
+    is_best = current_loss < best
+    best = min(current_loss, best)
+
+    if is_best:
+        save_experiment(model, None, best, exp_dir, exp_name)
+        logger.info(f'saved BEST model and train/valid loss to {exp_dir}')
+        logger.info(f'loss train:{best}')
+        output_path_ = f'{output_path}/experiments/{exp_name}'
+        create_dir_if_not_exist(output_path_)
+        model.save(output_path_)
+        stop_counter = 0
+    elif not is_best and best<max_target_loss:
+        stop_counter += 1
+        if stop_counter > patience:
+            logger.info('Early stopping')
+            stop = True
+
+    return best, stop_counter, stop
 
 def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, exp_name):   
              
@@ -129,7 +148,8 @@ def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_e
     
     start_time = time.time()
     
-    best = sys.maxsize
+    max_target_loss = 1000
+    best_loss = max_target_loss # only consider loss candidates less than "max_target_loss" 
     stop_counter = 0
     
     # log experiment meta data 
@@ -147,14 +167,6 @@ def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_e
             scaler.step(optimizer)
             scaler.update()
                       
-#             if step % args.print_freq == 0:
-#                 stats = dict(epoch=epoch, 
-#                              step=step,
-#                              loss=loss.item(),
-#                              time=int(time.time() - start_time))
-#                 #logger.debug('Epoch[{}/{}], Step[{}/{}] Loss: {}\n'.format(epoch + 1,n_epochs,step,num_samples,loss.item()))
-#                 #logger.info(f'epoch[{epoch + 1}/{n_epochs}]\n\t loss train: {loss.item()}')
-
             lr_value = lr_scheduler.optimizer.param_groups[0]['lr']
             writer.add_scalar(f'{exp_name}/train/lr', lr_value, epoch)
             lr_scheduler.step()
@@ -168,29 +180,13 @@ def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_e
         # write train loss to tensorboard
         avg_loss.append(total_loss/len(loader))
         writer.add_scalar(f'{exp_name}/loss/train', avg_loss[-1], epoch)
-        logger.info(f'epoch[{epoch + 1}/{n_epochs}]\n\t loss train: {avg_loss[-1]}')
-        
-        is_best = avg_loss[-1] < best
-        best = min(avg_loss[-1], best)
-        
-        logger.info(f'epoch[{epoch}/{n_epochs}]\n Current Perfomance:{avg_loss[-1]}\n Best Perfomance:{best}\n')
-        
-        if is_best:
-            save_experiment(model, None, best, exp_dir, exp_name)
-            logger.warning(f'saved BEST model and train/valid loss to {exp_dir}')
-            logger.warning(f'loss train:{best}')
-            output_path_ = f'{output_path}/experiments/{exp_name}'
-            create_dir_if_not_exist(output_path_)
-            model.save(output_path_)
+        logger.info(f'epoch[{epoch+1}/{n_epochs}]\n Current Perfomance:{avg_loss[-1]}\n Best Perfomance:{best_loss}\n')
 
-        if not is_best:
-            stop_counter += 1
-            if stop_counter > patience:
-                logger.info('Early stopping')
-                break
-        else: 
-            stop_counter = 0
-            
+        # early stopping
+        current_loss = avg_loss[-1]
+        best_loss, stop_counter, stop = early_stop(model, best_loss, current_loss, max_target_loss, stop_counter, exp_dir, exp_name)
+        if stop: break
+
     avg_loss = np.array(avg_loss)
     
     writer.flush()
