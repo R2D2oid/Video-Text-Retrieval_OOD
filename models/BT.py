@@ -13,7 +13,7 @@ class BarlowTwins(nn.Module):
         prob_dropout = 0.1
 
         n_feat = args.v_num_feats # 2048 -> 512
-        self.v2t_1 = nn.Sequential(
+        self.v2r = nn.Sequential(
             nn.Linear(n_feat, int(n_feat/2)),
             nn.BatchNorm1d(int(n_feat/2)),
             nn.ReLU(True),
@@ -36,7 +36,7 @@ class BarlowTwins(nn.Module):
          )
         
         n_feat = args.t_num_feats # 512 -> 512
-        self.t2v_2 = nn.Sequential(
+        self.t2r = nn.Sequential(
             nn.Linear(n_feat, int(n_feat/2)), 
             nn.BatchNorm1d(int(n_feat/2)),
             nn.ReLU(True),
@@ -65,8 +65,8 @@ class BarlowTwins(nn.Module):
         self.bn = nn.BatchNorm1d(sizes[-1], affine=False)
 
     def forward(self, y1, y2):
-        z1 = self.projector(self.v2t_1(y1))
-        z2 = self.projector(self.t2v_2(y2))
+        z1 = self.projector(self.v2r(y1))
+        z2 = self.projector(self.t2r(y2))
 
         # empirical cross-correlation matrix
         c = self.bn(z1).T @ self.bn(z2)
@@ -77,14 +77,27 @@ class BarlowTwins(nn.Module):
         return loss
     
     def save(self, path_):
-        torch.save(self.v2t_1.state_dict(), f'{path_}/model_v2t.sd')
-        torch.save(self.t2v_2.state_dict(), f'{path_}/model_t2v.sd')
+        torch.save(self.v2r.state_dict(), f'{path_}/model_v2t.sd')
+        torch.save(self.t2r.state_dict(), f'{path_}/model_t2v.sd')
         
     def get_v_and_t_representation(self, y1, y2):
-        proj_v2r = self.v2t_1(y1)
-        proj_t2r = self.t2v_2(y2)
+        proj_v2r = self.v2r(y1)
+        proj_t2r = self.t2r(y2)
         
         return proj_v2r, proj_t2r
+
+    def get_weights(self):
+        all_weights = []
+        for l in self.v2r:
+            if hasattr(l, 'weight'):
+                all_weights.append(l.weight)
+        for l in self.t2r:
+            if hasattr(l, 'weight'):
+                all_weights.append(l.weight)
+        for l in self.projector:
+            if hasattr(l, 'weight'):
+                all_weights.append(l.weight)
+        return all_weights
     
 def off_diagonal(x):
     # return a flattened view of the off-diagonal elements of a square matrix
