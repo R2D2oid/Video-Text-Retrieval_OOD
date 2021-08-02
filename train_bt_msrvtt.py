@@ -186,6 +186,10 @@ def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_e
         current_loss = avg_loss[-1]
         best_loss, stop_counter, stop = early_stop(model, best_loss, current_loss, max_target_loss, stop_counter, exp_dir, exp_name)
         if stop: break
+       
+        all_weights = model.get_weights()
+        for i in range(len(all_weights)):
+            writer.add_histogram(f'weights dist layer {i}', all_weights[i], epoch)
 
     avg_loss = np.array(avg_loss)
     
