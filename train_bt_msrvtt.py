@@ -2,6 +2,7 @@ import argparse
 import math
 import logging
 import time
+import sys
 import numpy as np
 import pandas as pd
 import torch 
@@ -73,6 +74,7 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
     # log experiment meta data 
     exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, shuffle, loss_criterion = None, write_it=True)
     
+    '''
     # save trained model, training losses, and validation losses
     save_experiment(model, None, train_loss, exp_dir, exp_name)
     logger.warning(f'saved model and train/valid loss to {exp_dir}')
@@ -82,6 +84,7 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
     output_path_ = f'{output_path}/experiments/{exp_name}'
     create_dir_if_not_exist(output_path_)
     model.save(output_path_)
+    '''
     return train_loss
 
 
@@ -125,6 +128,13 @@ def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_e
     avg_loss = []
     
     start_time = time.time()
+    
+    best = sys.maxsize
+    stop_counter = 0
+    
+    # log experiment meta data 
+    exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params['batch_size'], dl_params['shuffle'], loss_criterion = None, write_it=True)
+    
     for epoch in range(n_epochs):
         total_loss = 0
         for step, (y1, y2) in enumerate(loader, start=epoch * len(loader)):
@@ -160,14 +170,50 @@ def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_e
         writer.add_scalar(f'{exp_name}/loss/train', avg_loss[-1], epoch)
         logger.info(f'epoch[{epoch + 1}/{n_epochs}]\n\t loss train: {avg_loss[-1]}')
         
+        is_best = avg_loss[-1] < best
+        best = min(avg_loss[-1], best)
+        
+        logger.info(f'epoch[{epoch}/{n_epochs}]\n Current Perfomance:{avg_loss[-1]}\n Best Perfomance:{best}\n')
+        
+        if is_best:
+            save_experiment(model, None, best, exp_dir, exp_name)
+            logger.warning(f'saved BEST model and train/valid loss to {exp_dir}')
+            logger.warning(f'loss train:{best}')
+            output_path_ = f'{output_path}/experiments/{exp_name}'
+            create_dir_if_not_exist(output_path_)
+            model.save(output_path_)
+
+        if not is_best:
+            stop_counter += 1
+            if stop_counter > patience:
+                logger.info('Early stopping')
+                break
+        else: 
+            stop_counter = 0
+            
     avg_loss = np.array(avg_loss)
     
     writer.flush()
     return model, avg_loss.mean()
 
 if __name__ == '__main__':
-    ### python -W ignore train_v2t.py --n_epochs 15 --t_num_feats 512 --v_num_feats 2048 
-    # python -W ignore train_bt.py --n_epochs 10 --t_num_feats 512 --v_num_feats 2048 --batch_size_exp_min 7 --batch_size_exp_max 7 --lr_min 0.0001 --lr_max 0.001 --weight_decay_min 0.00001 --weight_decay_max 0.001 --lr_step_size_min 50 --lr_step_size_max 400 --lr_gamma 0.9 --relevance_score_min 0.00001 --relevance_score_max 0.0001 --shuffle
+    '''
+    python -W ignore train_bt_msrvtt.py 
+                        --n_epochs 10 
+                        --t_num_feats 512 
+                        --v_num_feats 2048 
+                        --batch_size_exp_min 7 
+                        --batch_size_exp_max 7 
+                        --lr_min 0.0001 
+                        --lr_max 0.001 
+                        --weight_decay_min 0.00001 
+                        --weight_decay_max 0.001 
+                        --lr_step_size_min 50 
+                        --lr_step_size_max 400 
+                        --lr_gamma 0.9 
+                        --shuffle 
+                        --patience 15
+    '''
 
     parser = argparse.ArgumentParser ()
     parser.add_argument('--n_epochs', type = int, default = 20, help = 'number of iterations')
@@ -222,6 +268,8 @@ if __name__ == '__main__':
     
     parser.add_argument('--print-freq', default=1, type=int, metavar='N', help='print frequency')
     
+    parser.add_argument('--patience', type = int, default = 10, help = 'patience counter for early stopping')
+
     args = parser.parse_args()
     
     logger.info(args)
@@ -231,6 +279,8 @@ if __name__ == '__main__':
     
     lr_step_size_min = args.lr_step_size_min
     lr_step_size_max = args.lr_step_size_max
+    
+    patience = args.patience
     
     lr_gamma = args.lr_gamma
     
