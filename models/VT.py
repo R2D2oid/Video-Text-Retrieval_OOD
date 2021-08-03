@@ -117,17 +117,50 @@ class VT(nn.Module):
         return proj_v2r, proj_t2r
     
     def get_weights(self):
-        all_weights = []
-        for l in self.v2r:
+        all_weights = {}
+        for i in range(len(self.v2r)):
+            l = self.v2r[i]
             if hasattr(l, 'weight'):
-                all_weights.append(l.weight)
-        for l in self.t2r:
+                layer_name = f'v2r_{i}'
+                all_weights[layer_name] = l.weight
+                
+        for i in range(len(self.t2r)):
+            l = self.t2r[i]
             if hasattr(l, 'weight'):
-                all_weights.append(l.weight)
-        for l in self.projector:
+                layer_name = f't2r_{i}'
+                all_weights[layer_name] = l.weight
+                
+        for i in range(len(self.projector)):
+            l = self.projector[i]
             if hasattr(l, 'weight'):
-                all_weights.append(l.weight)
+                layer_name = f'proj_{i}'
+                all_weights[layer_name] = l.weight
+                
         return all_weights
+    
+    def get_all_activations(self, v, t):
+        
+        activations = {}
+        def get_activation(name):
+            def hook(model_, input_, output_):
+                activations[name] = output_.detach()
+            return hook
+        
+        for i in range(len(self.v2r)):
+            layer_name = f'v2r_{i}'
+            self.v2r[i].register_forward_hook(get_activation(layer_name))
+        
+        for i in range(len(self.t2r)):
+            layer_name = f't2r_{i}'
+            self.t2r[i].register_forward_hook(get_activation(layer_name))
+            
+        for i in range(len(self.projector)):
+            layer_name = f'proj_{i}'
+            self.projector[i].register_forward_hook(get_activation(layer_name))
+                
+        output = self.forward(v,t)
+        
+        return activations
 
 def off_diagonal(x):
     # return a flattened view of the off-diagonal elements of a square matrix

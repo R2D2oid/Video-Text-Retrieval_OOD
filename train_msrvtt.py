@@ -191,8 +191,13 @@ def train_model(data_loader_train, lr, weight_decay, n_epochs, n_feats_t, n_feat
         if stop: break
        
         all_weights = model.get_weights()
-        for i in range(len(all_weights)):
-            writer.add_histogram(f'weights dist layer {i}', all_weights[i], epoch)
+        all_activations = model.get_all_activations(y1,y2)
+        
+        for k,v in all_weights.items():
+            writer.add_histogram(f'weights {k}', v, epoch)
+            
+        for k,v in all_activations.items():
+            writer.add_histogram(f'activations {k}', v, epoch)
 
     avg_loss = np.array(avg_loss)
     
