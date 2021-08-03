@@ -42,11 +42,9 @@ def optimize_model(lr, weight_decay, batch_size_exp):
     dl_params = {'batch_size': batch_size,
                  'shuffle': shuffle,
                  'num_workers': 1}
-    global lr_step_size
-    lr_step_size = 1
     
     # display experiment info
-    exp_info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, batch_size)
+    exp_info = get_experiment_info(lr, weight_decay, n_epochs, n_feats_t, n_feats_v, batch_size)
     logger.info(exp_info)
     
     # get data loaders for train and valid sets
@@ -59,7 +57,7 @@ def optimize_model(lr, weight_decay, batch_size_exp):
     dataloader_trainval = torch.utils.data.DataLoader(dataset_trainval, **dl_params)
 
     # get experiment name 
-    _, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, batch_size, shuffle, loss_criterion, write_it=False)
+    _, exp_name = log_experiment_info_msrvtt(output_path, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, batch_size, shuffle, loss_criterion, write_it=False)
     
     # init tensorboard
     global writer
@@ -67,13 +65,13 @@ def optimize_model(lr, weight_decay, batch_size_exp):
 
     # train 
     torch.set_grad_enabled(True)
-    model, train_loss = train_model(dataloader_trainval, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, dl_params, exp_name)
+    model, train_loss = train_model(dataloader_trainval, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, dl_params, exp_name)
       
     # calculate loss on validation
     # valid_loss = evaluate_validation(dataloader_valid, model)
        
     # log experiment meta data 
-    exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, batch_size, shuffle, loss_criterion, write_it=True)
+    exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, batch_size, shuffle, loss_criterion, write_it=True)
     
     # save trained model, training losses, and validation losses
     save_experiment(model, None, train_loss, exp_dir, exp_name)
@@ -125,7 +123,7 @@ def early_stop(model, best, current_loss, max_target_loss, stop_counter, exp_dir
 
     return best, stop_counter, stop
 
-def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, dl_params, exp_name):   
+def train_model(data_loader_train, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, dl_params, exp_name):   
              
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -153,7 +151,7 @@ def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_e
     stop_counter = 0
     
     # log experiment meta data 
-    exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, dl_params['batch_size'], dl_params['shuffle'], loss_criterion, write_it=True)
+    exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, dl_params['batch_size'], dl_params['shuffle'], loss_criterion, write_it=True)
     
     for epoch in range(n_epochs):
         total_loss = 0
@@ -209,7 +207,6 @@ if __name__ == '__main__':
                         --lr_max 0.01 \
                         --weight_decay_min 0.00001 \
                         --weight_decay_max 0.01 \
-                        --lr_gamma 0.9 \
                         --shuffle \
                         --patience 20 \
                         --max-target-loss 1000
@@ -221,9 +218,6 @@ if __name__ == '__main__':
         
     # loss criterion
     parser.add_argument('--loss_criterion', default = 'cross_correlation') # 'mse', 'cross_correlation', 'contrastive', 'cosine'
-    
-    # lr gamma
-    parser.add_argument('--lr_gamma', type = float, default = 0.8, help = 'lr schedule: gamma')
     
     # lr
     parser.add_argument('--lr_min', type = float, default = 0.00001, help = 'learning rate lower bound')
@@ -272,9 +266,7 @@ if __name__ == '__main__':
     
     patience = args.patience
     max_target_loss = args.max_target_loss
-    
-    lr_gamma = args.lr_gamma
-    
+        
     weight_decay_min = args.weight_decay_min
     weight_decay_max = args.weight_decay_max
     
