@@ -4,6 +4,7 @@ from msrvtt_dataset import Standardize_VideoSentencePair, ToTensor_VideoSentence
 from torchvision import transforms
 import utils.sys_utils as utils
 
+import time
 import torch
 import numpy as np
 
@@ -36,11 +37,10 @@ def save_experiment(model, valid_loss, train_loss, exp_dir, exp_name):
     
 
 def log_experiment_info(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, relevance_score, shuffle, loss_criterion = None, write_it=True):
-    import uuid
-    random_hash = uuid.uuid4().hex
-
+    
+    unique_id = int(time.time())
     shuffle_flag = 'yes' if shuffle else 'no'
-    exp_name = f'experiment_shuffle_{shuffle_flag}_loss_{loss_criterion}_lr_{round(lr,6)}_lr_step_{round(lr_step_size,6)}_gamma_{round(lr_gamma,6)}_wdecay_{round(weight_decay,6)}_bsz_{batch_size}_epochs_{n_epochs}_relevance_{round(relevance_score,2)}_{L}x{n_feats_t}_{T}x{n_feats_v}_{random_hash}'
+    exp_name = f'experiment_shuffle_{shuffle_flag}_loss_{loss_criterion}_lr_{round(lr,6)}_lr_step_{round(lr_step_size,6)}_gamma_{round(lr_gamma,6)}_wdecay_{round(weight_decay,6)}_bsz_{batch_size}_epochs_{n_epochs}_relevance_{round(relevance_score,2)}_{L}x{n_feats_t}_{T}x{n_feats_v}_{unique_id}'
     exp_dir = f'{output_path}/experiments/{exp_name}'
     
     if write_it:
@@ -63,12 +63,10 @@ def get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_fe
     return info
 
 
-def log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, shuffle, loss_criterion = None, write_it=True):
-    import uuid
-    random_hash = uuid.uuid4().hex
-
+def log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, batch_size, shuffle, loss_criterion = None, write_it=True):
+    unique_id = int(time.time())
     shuffle_flag = 'yes' if shuffle else 'no'
-    exp_name = f'experiment_shuffle_{shuffle_flag}_loss_{loss_criterion}_lr_{round(lr,6)}_lr_step_{round(lr_step_size,6)}_gamma_{round(lr_gamma,6)}_wdecay_{round(weight_decay,6)}_bsz_{batch_size}_epochs_{n_epochs}_{L}x{n_feats_t}_{T}x{n_feats_v}_{random_hash}'
+    exp_name = f'experiment_shuffle_{shuffle_flag}_loss_{loss_criterion}_lr_{round(lr,6)}_lr_step_{round(lr_step_size,6)}_gamma_{round(lr_gamma,6)}_wdecay_{round(weight_decay,6)}_bsz_{batch_size}_epochs_{n_epochs}_{L}x{n_feats_t}_{T}x{n_feats_v}_{unique_id}'
     exp_dir = f'{output_path}/experiments/{exp_name}'
     
     if write_it:

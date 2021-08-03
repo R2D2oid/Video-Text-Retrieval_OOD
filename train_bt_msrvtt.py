@@ -12,7 +12,6 @@ from bayes_opt import BayesianOptimization
 from datetime import datetime as dt
 from torchvision import transforms
 
-# import utils.sys_utils as utils
 from models.BT import BarlowTwins as BT
 from msrvtt_dataset import MSRVTTDataset as MSRVTT
 from msrvtt_dataset import Standardize_VideoSentencePair, ToTensor_VideoSentencePair
@@ -60,7 +59,7 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
     dataloader_trainval = torch.utils.data.DataLoader(dataset_trainval, **dl_params)
 
     # get experiment name 
-    _, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, shuffle, loss_criterion=None, write_it=False)
+    _, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, batch_size, shuffle, loss_criterion=None, write_it=False)
     
     # init tensorboard
     global writer
@@ -68,7 +67,7 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
 
     # train 
     torch.set_grad_enabled(True)
-    model, train_loss = train_model(dataloader_trainval, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, exp_name)
+    model, train_loss = train_model(dataloader_trainval, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, dl_params, exp_name)
       
     # calculate loss on validation
     # valid_loss = evaluate_validation(dataloader_valid, model)
@@ -246,10 +245,6 @@ if __name__ == '__main__':
     # num feats
     parser.add_argument('--t_num_feats', type = int, default = 512, help = 'number of feats in each vector')
     parser.add_argument('--v_num_feats', type = int, default = 2048, help = 'number of feats in each vector')
-
-    # feat sequence length
-    parser.add_argument('--t_feat_len', type = int, default = 1, help = 'length of feat vector')
-    parser.add_argument('--v_feat_len', type = int, default = 1, help = 'length of feat vector')
     
     # bayesian optimization parameters
     parser.add_argument('--bayes_n_iter', type = int, default = 1, help = 'bayesian optimization num iterations')
@@ -299,8 +294,6 @@ if __name__ == '__main__':
     
     n_feats_t = args.t_num_feats
     n_feats_v = args.v_num_feats
-    T = args.v_feat_len
-    L = args.t_feat_len
         
     repo_dir = args.repo_dir
     trainval_split_path = f'{repo_dir}/{args.trainval_split_path}'
