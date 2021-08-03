@@ -196,7 +196,7 @@ def train_model(data_loader_train, lr, weight_decay, n_epochs, n_feats_t, n_feat
 
 if __name__ == '__main__':
     '''
-    python -W ignore train_bt_msrvtt.py \
+    python -W ignore train_msrvtt.py \
                         --n_epochs 1000 \
                         --t_num_feats 512 \
                         --v_num_feats 2048 \
