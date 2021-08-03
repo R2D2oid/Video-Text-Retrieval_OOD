@@ -19,8 +19,6 @@ from msrvtt_dataset import Standardize_VideoSentencePair, ToTensor_VideoSentence
 from utils.train_utils import get_experiment_info, log_experiment_info_msrvtt, save_experiment, get_dataloader
 from utils.sys_utils import create_dir_if_not_exist
 
-# init tensorboard
-writer = SummaryWriter('runs/')
 torch.manual_seed(42)
 
 # init logging
@@ -62,8 +60,12 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
     dataloader_trainval = torch.utils.data.DataLoader(dataset_trainval, **dl_params)
 
     # get experiment name 
-    _, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, shuffle, loss_criterion, write_it=False)
+    _, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, shuffle, loss_criterion=None, write_it=False)
     
+    # init tensorboard
+    global writer
+    writer = SummaryWriter(f'runs/{exp_name}')
+
     # train 
     torch.set_grad_enabled(True)
     model, train_loss = train_model(dataloader_trainval, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, exp_name)
