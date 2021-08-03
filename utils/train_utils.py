@@ -40,20 +40,20 @@ def log_experiment_info(output_path, lr, lr_step_size, weight_decay, lr_gamma, n
     
     unique_id = int(time.time())
     shuffle_flag = 'yes' if shuffle else 'no'
-    exp_name = f'experiment_shuffle_{shuffle_flag}_loss_{loss_criterion}_lr_{round(lr,6)}_lr_step_{round(lr_step_size,6)}_gamma_{round(lr_gamma,6)}_wdecay_{round(weight_decay,6)}_bsz_{batch_size}_epochs_{n_epochs}_relevance_{round(relevance_score,2)}_{L}x{n_feats_t}_{T}x{n_feats_v}_{unique_id}'
+    exp_name = f'experiment_shuffle_{shuffle_flag}_loss_{loss_criterion}_lr_{round(lr,6)}_lr_step_{round(lr_step_size,6)}_gamma_{round(lr_gamma,6)}_wdecay_{round(weight_decay,6)}_bsz_{batch_size}_epochs_{n_epochs}_relevance_{round(relevance_score,2)}_1x{n_feats_t}_1x{n_feats_v}_{unique_id}'
     exp_dir = f'{output_path}/experiments/{exp_name}'
     
     if write_it:
         utils.create_dir_if_not_exist(exp_dir)
 
         info_path = f'{exp_dir}/experiment_info.txt'
-        info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
+        info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, batch_size)
         utils.dump_textfile(info, info_path)
     
     return exp_dir, exp_name
 
 
-def get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size):
+def get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, batch_size):
     info = []
     info.append(f'lr: {lr}')
     info.append(f'lr_step_size: {lr_step_size}')
@@ -66,14 +66,14 @@ def get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_fe
 def log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, batch_size, shuffle, loss_criterion = None, write_it=True):
     unique_id = int(time.time())
     shuffle_flag = 'yes' if shuffle else 'no'
-    exp_name = f'experiment_shuffle_{shuffle_flag}_loss_{loss_criterion}_lr_{round(lr,6)}_lr_step_{round(lr_step_size,6)}_gamma_{round(lr_gamma,6)}_wdecay_{round(weight_decay,6)}_bsz_{batch_size}_epochs_{n_epochs}_{L}x{n_feats_t}_{T}x{n_feats_v}_{unique_id}'
+    exp_name = f'experiment_shuffle_{shuffle_flag}_loss_{loss_criterion}_lr_{round(lr,6)}_lr_step_{round(lr_step_size,6)}_gamma_{round(lr_gamma,6)}_wdecay_{round(weight_decay,6)}_bsz_{batch_size}_epochs_{n_epochs}_1x{n_feats_t}_1x{n_feats_v}_{unique_id}'
     exp_dir = f'{output_path}/experiments/{exp_name}'
     
     if write_it:
         utils.create_dir_if_not_exist(exp_dir)
 
         info_path = f'{exp_dir}/experiment_info.txt'
-        info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
+        info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, batch_size)
         utils.dump_textfile(info, info_path)
     
     return exp_dir, exp_name

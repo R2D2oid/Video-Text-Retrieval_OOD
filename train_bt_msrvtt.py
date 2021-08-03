@@ -12,7 +12,7 @@ from bayes_opt import BayesianOptimization
 from datetime import datetime as dt
 from torchvision import transforms
 
-from models.BT import BarlowTwins as BT
+from models.VT import VT
 from msrvtt_dataset import MSRVTTDataset as MSRVTT
 from msrvtt_dataset import Standardize_VideoSentencePair, ToTensor_VideoSentencePair
 from utils.train_utils import get_experiment_info, log_experiment_info_msrvtt, save_experiment, get_dataloader
@@ -33,7 +33,7 @@ logging.getLogger ().addHandler (logging.StreamHandler())
 logger = logging.getLogger()
     
 
-def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
+def optimize_model(lr, weight_decay, batch_size_exp):
   
     global batch_size
     # use batch_size provided by bayes_opt as 2**int(value)
@@ -42,11 +42,11 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
     dl_params = {'batch_size': batch_size,
                  'shuffle': shuffle,
                  'num_workers': 1}
-    
-    lr_step_size = int(lr_step_size)
+    global lr_step_size
+    lr_step_size = 1
     
     # display experiment info
-    exp_info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size)
+    exp_info = get_experiment_info(lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, batch_size)
     logger.info(exp_info)
     
     # get data loaders for train and valid sets
@@ -59,7 +59,7 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
     dataloader_trainval = torch.utils.data.DataLoader(dataset_trainval, **dl_params)
 
     # get experiment name 
-    _, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, batch_size, shuffle, loss_criterion=None, write_it=False)
+    _, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, batch_size, shuffle, loss_criterion, write_it=False)
     
     # init tensorboard
     global writer
@@ -73,7 +73,7 @@ def optimize_model(lr, lr_step_size, weight_decay, batch_size_exp):
     # valid_loss = evaluate_validation(dataloader_valid, model)
        
     # log experiment meta data 
-    exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, shuffle, loss_criterion = None, write_it=True)
+    exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, batch_size, shuffle, loss_criterion, write_it=True)
     
     # save trained model, training losses, and validation losses
     save_experiment(model, None, train_loss, exp_dir, exp_name)
@@ -125,7 +125,7 @@ def early_stop(model, best, current_loss, max_target_loss, stop_counter, exp_dir
 
     return best, stop_counter, stop
 
-def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params, exp_name):   
+def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, dl_params, exp_name):   
              
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -133,7 +133,7 @@ def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_e
     flag = True 
     
     ### instantiate model
-    model = BT(args)
+    model = VT(args)
     model.to(device)
     
     loader = data_loader_train
@@ -149,12 +149,11 @@ def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_e
     
     start_time = time.time()
     
-    max_target_loss = 1000
     best_loss = max_target_loss # only consider loss candidates less than "max_target_loss" 
     stop_counter = 0
     
     # log experiment meta data 
-    exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, T, L, dl_params['batch_size'], dl_params['shuffle'], loss_criterion = None, write_it=True)
+    exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, lr_step_size, weight_decay, lr_gamma, n_epochs, n_feats_t, n_feats_v, dl_params['batch_size'], dl_params['shuffle'], loss_criterion, write_it=True)
     
     for epoch in range(n_epochs):
         total_loss = 0
@@ -199,21 +198,21 @@ def train_model(data_loader_train, lr, lr_step_size, weight_decay, lr_gamma, n_e
 
 if __name__ == '__main__':
     '''
-    python -W ignore train_bt_msrvtt.py 
-                        --n_epochs 10 
-                        --t_num_feats 512 
-                        --v_num_feats 2048 
-                        --batch_size_exp_min 7 
-                        --batch_size_exp_max 7 
-                        --lr_min 0.0001 
-                        --lr_max 0.001 
-                        --weight_decay_min 0.00001 
-                        --weight_decay_max 0.001 
-                        --lr_step_size_min 50 
-                        --lr_step_size_max 400 
-                        --lr_gamma 0.9 
-                        --shuffle 
-                        --patience 15
+    python -W ignore train_bt_msrvtt.py \
+                        --n_epochs 1000 \
+                        --t_num_feats 512 \
+                        --v_num_feats 2048 \
+                        --loss_criterion cross_correlation \
+                        --batch_size_exp_min 7 \
+                        --batch_size_exp_max 9 \
+                        --lr_min 0.00001 \
+                        --lr_max 0.01 \
+                        --weight_decay_min 0.00001 \
+                        --weight_decay_max 0.01 \
+                        --lr_gamma 0.9 \
+                        --shuffle \
+                        --patience 20 \
+                        --max-target-loss 1000
     '''
 
     parser = argparse.ArgumentParser ()
@@ -221,18 +220,14 @@ if __name__ == '__main__':
     parser.add_argument('--n_train_samples', type = int, default = None, help = 'number of training samples')
         
     # loss criterion
-    parser.add_argument('--loss_criterion', default = 'mse') # MSELoss
-    
-    # lr step size
-    parser.add_argument('--lr_step_size_min', type = int, default = 50, help = 'lr schedule: step size lower bound')
-    parser.add_argument('--lr_step_size_max', type = int, default = 400, help = 'lr schedule: step size upper bound')
+    parser.add_argument('--loss_criterion', default = 'cross_correlation') # 'mse', 'cross_correlation', 'contrastive', 'cosine'
     
     # lr gamma
     parser.add_argument('--lr_gamma', type = float, default = 0.8, help = 'lr schedule: gamma')
     
     # lr
     parser.add_argument('--lr_min', type = float, default = 0.00001, help = 'learning rate lower bound')
-    parser.add_argument('--lr_max', type = float, default = 0.001, help = 'learning rate upper bound')
+    parser.add_argument('--lr_max', type = float, default = 0.01, help = 'learning rate upper bound')
     
     # weight decay
     parser.add_argument('--weight_decay_min', type = float, default = 0.00001, help = 'weight decay lower bound')
@@ -247,8 +242,8 @@ if __name__ == '__main__':
     parser.add_argument('--v_num_feats', type = int, default = 2048, help = 'number of feats in each vector')
     
     # bayesian optimization parameters
-    parser.add_argument('--bayes_n_iter', type = int, default = 1, help = 'bayesian optimization num iterations')
-    parser.add_argument('--bayes_init_points', type = int, default = 1, help = 'bayesian optimization init points')
+    parser.add_argument('--bayes_n_iter', type = int, default = 10, help = 'bayesian optimization num iterations')
+    parser.add_argument('--bayes_init_points', type = int, default = 10, help = 'bayesian optimization init points')
     
     # io params
     parser.add_argument('--repo_dir', default = '/usr/local/extstore01/zahra/datasets/MSRVTT')
@@ -265,7 +260,8 @@ if __name__ == '__main__':
     
     parser.add_argument('--print-freq', default=1, type=int, metavar='N', help='print frequency')
     
-    parser.add_argument('--patience', type = int, default = 10, help = 'patience counter for early stopping')
+    parser.add_argument('--patience', type = int, default = 10, help = 'early stopping: patience counter')
+    parser.add_argument('--max-target-loss', type = int, default = 1000, help = 'early stopping: maximum loss to settle for')
 
     args = parser.parse_args()
     
@@ -274,10 +270,8 @@ if __name__ == '__main__':
     lr_min = args.lr_min
     lr_max = args.lr_max
     
-    lr_step_size_min = args.lr_step_size_min
-    lr_step_size_max = args.lr_step_size_max
-    
     patience = args.patience
+    max_target_loss = args.max_target_loss
     
     lr_gamma = args.lr_gamma
     
@@ -309,7 +303,6 @@ if __name__ == '__main__':
     
     # bounds of parameter space
     pbounds = {'lr': (lr_min, lr_max), 
-               'lr_step_size': (lr_step_size_min, lr_step_size_max), 
                'weight_decay':(weight_decay_min, weight_decay_max), 
                'batch_size_exp': (batch_size_exp_min, batch_size_exp_max)
               }

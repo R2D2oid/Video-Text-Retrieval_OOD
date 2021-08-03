@@ -11,7 +11,6 @@ class VT(nn.Module):
     def __init__(self, args):
         super().__init__()
         self.args = args
-        
         prob_dropout = 0.1
 
         n_feat = args.v_num_feats # 2048 -> 512
@@ -66,10 +65,12 @@ class VT(nn.Module):
         # normalization layer for the representations z1 and z2
         self.bn = nn.BatchNorm1d(sizes[-1], affine=False)
         
-        self.loss_criterion = 'contrastive'
-        if self.loss_criterion == 'contrastive':
+        if args.loss_criterion == 'cross_correlation':
+            # the loss is calculated in forward atm 
+            self.criterion = None
+        elif args.loss_criterion == 'contrastive':
             self.criterion = ContrastiveLoss(temperature=0.5, contrast_mode='all', base_temperature=1)
-        elif self.loss_criterion == 'cosine':
+        elif args.loss_criterion == 'cosine':
             self.criterion = nn.CosineEmbeddingLoss()
             # the cosine embedding loss takes a target y=1 for training positive (similar) vectors 
             #                                      and y=-1 for training dissimilar (negative) vectors
@@ -85,11 +86,17 @@ class VT(nn.Module):
         proj_v2r = self.bn(z1)
         proj_t2r = self.bn(z2)
         
-        if self.loss_criterion == 'contrastive':
+        if self.args.loss_criterion == 'cross_correlation':
+            # empirical cross-correlation matrix
+            c = proj_v2r.T @ proj_t2r
+            on_diag = torch.diagonal(c).add_(-1).pow_(2).sum()
+            off_diag = off_diagonal(c).pow_(2).sum()
+            loss = on_diag + self.args.lambd * off_diag
+        elif self.args.loss_criterion == 'contrastive':
             p_v = proj_v2r.unsqueeze(dim=1)
             p_t = proj_t2r.unsqueeze(dim=1)
             loss = self.criterion(torch.cat([p_v,p_t], dim=1))
-        elif self.loss_criterion == 'cosine':
+        elif self.args.loss_criterion == 'cosine':
             loss = self.criterion(proj_v2r, proj_t2r, target_tensor)
         else: # mse
             loss = self.criterion(proj_v2r, proj_t2r)
@@ -97,6 +104,8 @@ class VT(nn.Module):
         return loss
     
     def save(self, path_):
+        torch.save(self.v2r.state_dict(), f'{path_}/model_v2r.sd')
+        torch.save(self.t2r.state_dict(), f'{path_}/model_t2r.sd')
         torch.save(self.state_dict(), f'{path_}/model_vt.sd')
 
     def get_v_and_t_representation(self, y1, y2):
@@ -106,3 +115,22 @@ class VT(nn.Module):
         proj_t2r = self.t2r(y2)
         
         return proj_v2r, proj_t2r
+    
+    def get_weights(self):
+        all_weights = []
+        for l in self.v2r:
+            if hasattr(l, 'weight'):
+                all_weights.append(l.weight)
+        for l in self.t2r:
+            if hasattr(l, 'weight'):
+                all_weights.append(l.weight)
+        for l in self.projector:
+            if hasattr(l, 'weight'):
+                all_weights.append(l.weight)
+        return all_weights
+
+def off_diagonal(x):
+    # return a flattened view of the off-diagonal elements of a square matrix
+    n, m = x.shape
+    assert n == m
+    return x.flatten()[:-1].view(n - 1, n + 1)[:, 1:].flatten()
