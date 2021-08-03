@@ -138,8 +138,7 @@ def train_model(data_loader_train, lr, weight_decay, n_epochs, n_feats_t, n_feat
     scaler = torch.cuda.amp.GradScaler()
     
     optimizer = torch.optim.Adam(model.parameters(), lr = lr, weight_decay = weight_decay)
-    # Stepwise LR
-    # lr_scheduler = torch.optim.lr_scheduler.StepLR(optimizer, step_size = lr_step_size, gamma = lr_gamma)
+
     # CosineAnnealing LR
     lr_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, n_epochs*len(loader), eta_min=0, last_epoch=-1)
     
@@ -182,7 +181,13 @@ def train_model(data_loader_train, lr, weight_decay, n_epochs, n_feats_t, n_feat
 
         # early stopping
         current_loss = avg_loss[-1]
-        best_loss, stop_counter, stop = early_stop(model, best_loss, current_loss, max_target_loss, stop_counter, exp_dir, exp_name)
+        best_loss, stop_counter, stop = early_stop(model, 
+                                                   best_loss, 
+                                                   current_loss, 
+                                                   max_target_loss, 
+                                                   stop_counter, 
+                                                   exp_dir, 
+                                                   exp_name)
         if stop: break
        
         all_weights = model.get_weights()
@@ -197,7 +202,7 @@ def train_model(data_loader_train, lr, weight_decay, n_epochs, n_feats_t, n_feat
 if __name__ == '__main__':
     '''
     python -W ignore train_msrvtt.py \
-                        --n_epochs 1000 \
+                        --n_epochs 2000 \
                         --t_num_feats 512 \
                         --v_num_feats 2048 \
                         --loss_criterion cross_correlation \
@@ -209,7 +214,7 @@ if __name__ == '__main__':
                         --weight_decay_max 0.01 \
                         --shuffle \
                         --patience 20 \
-                        --max-target-loss 1000
+                        --max-target-loss 100
     '''
 
     parser = argparse.ArgumentParser ()
@@ -228,8 +233,8 @@ if __name__ == '__main__':
     parser.add_argument('--weight_decay_max', type = float, default = 0.001, help = 'weight decay upper bound')
     
     # batch size
-    parser.add_argument('--batch_size_exp_min', type = int, default = 5, help = 'batch size exponent lower bound; batch_size=2**n')
-    parser.add_argument('--batch_size_exp_max', type = int, default = 7, help = 'batch size exponent upper bound; batch_size=2**n')
+    parser.add_argument('--batch_size_exp_min', type = int, default = 5, help = 'batch size exponent min; batch_size=2**n')
+    parser.add_argument('--batch_size_exp_max', type = int, default = 7, help = 'batch size exponent max; batch_size=2**n')
     
     # num feats
     parser.add_argument('--t_num_feats', type = int, default = 512, help = 'number of feats in each vector')
@@ -246,14 +251,10 @@ if __name__ == '__main__':
     parser.add_argument('--trainval_split_path', default = 'TrainVal_videoid_sentid.txt')    
     parser.add_argument('--output_path', default = '/usr/local/extstore01/zahra/VTR_OOD/output_msrvtt')
     
-    parser.add_argument('--projector', default='1024-1024-1024', type=str, metavar='MLP', help='projector MLP')
-    
-    parser.add_argument('--lambd', default=0.0051, type=float, metavar='L', help='weight on off-diagonal terms')
-    
+    parser.add_argument('--projector', default='1024-1024-1024', type=str, help='projector MLP')
+    parser.add_argument('--lambd', default=0.0051, type=float, help='weight on off-diagonal terms')
     parser.add_argument('--shuffle', dest='shuffle', action='store_true')
-    
-    parser.add_argument('--print-freq', default=1, type=int, metavar='N', help='print frequency')
-    
+    parser.add_argument('--print-freq', default=1, type=int, help='print frequency')
     parser.add_argument('--patience', type = int, default = 10, help = 'early stopping: patience counter')
     parser.add_argument('--max-target-loss', type = int, default = 1000, help = 'early stopping: maximum loss to settle for')
 
