@@ -36,11 +36,10 @@ def save_experiment(model, valid_loss, train_loss, exp_dir, exp_name):
     utils.dump_picklefile(valid_loss, f'{exp_dir}/losses_validation_{exp_name}.pkl')
     
 
-def log_experiment_info(output_path, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, relevance_score, shuffle, loss_criterion = None, write_it=True):
+def log_experiment_info(output_path, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, T, L, batch_size, relevance_score, loss_criterion = None, write_it=True):
     
     unique_id = int(time.time())
-    shuffle_flag = 'yes' if shuffle else 'no'
-    exp_name = f'experiment_shuffle_{shuffle_flag}_loss_{loss_criterion}_lr_{round(lr,6)}_wdecay_{round(weight_decay,6)}_bsz_{batch_size}_relevance_{round(relevance_score,2)}_1x{n_feats_t}_1x{n_feats_v}_{unique_id}'
+    exp_name = f'experiment_loss_{loss_criterion}_lr_{round(lr,6)}_wdecay_{round(weight_decay,6)}_bsz_{batch_size}_relevance_{round(relevance_score,2)}_1x{n_feats_t}_1x{n_feats_v}_{unique_id}'
     exp_dir = f'{output_path}/experiments/{exp_name}'
     
     if write_it:
@@ -62,10 +61,9 @@ def get_experiment_info(lr, weight_decay, n_epochs, n_feats_t, n_feats_v, batch_
     return info
 
 
-def log_experiment_info_msrvtt(output_path, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, batch_size, shuffle, loss_criterion = None, write_it=True):
+def log_experiment_info_msrvtt(output_path, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, batch_size, loss_criterion = None, write_it=True):
     unique_id = int(time.time())
-    shuffle_flag = 'yes' if shuffle else 'no'
-    exp_name = f'experiment_shuffle_{shuffle_flag}_loss_{loss_criterion}_lr_{round(lr,6)}_wdecay_{round(weight_decay,6)}_bsz_{batch_size}_{unique_id}'
+    exp_name = f'experiment_loss_{loss_criterion}_lr_{round(lr,6)}_wdecay_{round(weight_decay,6)}_bsz_{batch_size}_{unique_id}'
     exp_dir = f'{output_path}/experiments/{exp_name}'
     
     if write_it:

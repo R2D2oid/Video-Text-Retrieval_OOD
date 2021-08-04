@@ -57,7 +57,7 @@ def optimize_model(lr, weight_decay, batch_size_exp):
     dataloader_trainval = torch.utils.data.DataLoader(dataset_trainval, **dl_params)
 
     # get experiment name 
-    _, exp_name = log_experiment_info_msrvtt(output_path, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, batch_size, shuffle, loss_criterion, write_it=False)
+    _, exp_name = log_experiment_info_msrvtt(output_path, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, batch_size, loss_criterion, write_it=False)
     
     # init tensorboard
     global writer
@@ -71,7 +71,7 @@ def optimize_model(lr, weight_decay, batch_size_exp):
     # valid_loss = evaluate_validation(dataloader_valid, model)
        
     # log experiment meta data 
-    exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, batch_size, shuffle, loss_criterion, write_it=True)
+    exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, batch_size, loss_criterion, write_it=True)
     
     # save trained model, training losses, and validation losses
     save_experiment(model, None, train_loss, exp_dir, exp_name)
@@ -150,7 +150,7 @@ def train_model(data_loader_train, lr, weight_decay, n_epochs, n_feats_t, n_feat
     stop_counter = 0
     
     # log experiment meta data 
-    exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, dl_params['batch_size'], dl_params['shuffle'], loss_criterion, write_it=True)
+    exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, dl_params['batch_size'], loss_criterion, write_it=True)
     
     for epoch in range(n_epochs):
         total_loss = 0
@@ -213,13 +213,13 @@ if __name__ == '__main__':
                         --loss_criterion cross_correlation \
                         --batch_size_exp_min 7 \
                         --batch_size_exp_max 9 \
-                        --lr_min 0.00001 \
-                        --lr_max 0.01 \
+                        --lr_min 0.00000001 \
+                        --lr_max 0.0001 \
                         --weight_decay_min 0.00001 \
                         --weight_decay_max 0.01 \
                         --shuffle \
                         --patience 20 \
-                        --max-target-loss 100
+                        --max-target-loss 1000
     '''
 
     parser = argparse.ArgumentParser ()
