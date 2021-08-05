@@ -132,6 +132,8 @@ def train_model(data_loader_train, lr, weight_decay, n_epochs, n_feats_t, n_feat
     
     ### instantiate model
     model = VT(args)
+    if args.init_model_name is not None:
+            model.load_state_dict(torch.load(init_model_path))
     model.to(device)
     
     loader = data_loader_train
@@ -207,19 +209,20 @@ def train_model(data_loader_train, lr, weight_decay, n_epochs, n_feats_t, n_feat
 if __name__ == '__main__':
     '''
     python -W ignore train_msrvtt.py \
-                        --n_epochs 2000 \
+                        --n_epochs 500 \
                         --t_num_feats 512 \
                         --v_num_feats 2048 \
                         --loss_criterion cross_correlation \
                         --batch_size_exp_min 7 \
-                        --batch_size_exp_max 9 \
-                        --lr_min 0.00000001 \
-                        --lr_max 0.0001 \
-                        --weight_decay_min 0.00001 \
-                        --weight_decay_max 0.01 \
+                        --batch_size_exp_max 10 \
+                        --lr_min 0.000000001 \
+                        --lr_max 0.00001 \
+                        --weight_decay_min 0.0001 \
+                        --weight_decay_max 0.1 \
                         --shuffle \
-                        --patience 20 \
-                        --max-target-loss 1000
+                        --patience 50 \
+                        --max-target-loss 1000 \
+                        --init-model-name experiment_loss_cross_correlation_lr_2.1e-05_wdecay_0.018264_bsz_512_1628163958
     '''
 
     parser = argparse.ArgumentParser ()
@@ -263,6 +266,9 @@ if __name__ == '__main__':
     parser.add_argument('--patience', type = int, default = 10, help = 'early stopping: patience counter')
     parser.add_argument('--max-target-loss', type = int, default = 1000, help = 'early stopping: maximum loss to settle for')
 
+    parser.add_argument('--init-model-name', type = str) 
+    # 'experiment_loss_cross_correlation_lr_2.1e-05_wdecay_0.018264_bsz_512_1628163958'
+
     args = parser.parse_args()
     
     logger.info(args)
@@ -299,6 +305,8 @@ if __name__ == '__main__':
        
     loss_criterion = args.loss_criterion
     
+    init_model_path = f'output_msrvtt/experiments/{args.init_model_name}/model_vt.sd'
+
     # bounds of parameter space
     pbounds = {'lr': (lr_min, lr_max), 
                'weight_decay':(weight_decay_min, weight_decay_max), 
