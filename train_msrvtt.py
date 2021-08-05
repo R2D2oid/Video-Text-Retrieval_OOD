@@ -53,9 +53,12 @@ def optimize_model(lr, weight_decay, batch_size_exp):
     standardize = Standardize_VideoSentencePair(dataset_stats)
     trnsfrm = transforms.Compose([standardize, ToTensor_VideoSentencePair()])
     dataset_trainval = MSRVTT(vid_feats_dir=v_feats_dir, txt_feats_path=t_feats_path, ids_path=trainval_split_path, transform=trnsfrm)
+    
+    dataset_valid = MSRVTT(vid_feats_dir=v_feats_dir_val, txt_feats_path=t_feats_path_val, ids_path=trainval_split_path_val, transform=trnsfrm)
 
     dataloader_trainval = torch.utils.data.DataLoader(dataset_trainval, **dl_params)
-
+    dataloader_valid = torch.utils.data.DataLoader(dataset_valid, **dl_params)
+    
     # get experiment name 
     _, exp_name = log_experiment_info_msrvtt(output_path, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, batch_size, loss_criterion, write_it=False)
     
@@ -65,11 +68,8 @@ def optimize_model(lr, weight_decay, batch_size_exp):
 
     # train 
     torch.set_grad_enabled(True)
-    model, train_loss = train_model(dataloader_trainval, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, dl_params, exp_name)
-      
-    # calculate loss on validation
-    # valid_loss = evaluate_validation(dataloader_valid, model)
-       
+    model, train_loss = train_model(dataloader_trainval, dataloader_valid, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, dl_params, exp_name)
+            
     # log experiment meta data 
     exp_dir, exp_name = log_experiment_info_msrvtt(output_path, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, batch_size, loss_criterion, write_it=True)
     
@@ -123,7 +123,7 @@ def early_stop(model, best, current_loss, max_target_loss, stop_counter, exp_dir
 
     return best, stop_counter, stop
 
-def train_model(data_loader_train, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, dl_params, exp_name):   
+def train_model(data_loader_train, data_loader_val, lr, weight_decay, n_epochs, n_feats_t, n_feats_v, dl_params, exp_name):   
              
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     
@@ -176,13 +176,18 @@ def train_model(data_loader_train, lr, weight_decay, n_epochs, n_feats_t, n_feat
                 writer.add_graph(model, (y1,y2))
                 flag = False
         
-        # write train loss to tensorboard
-        avg_loss.append(total_loss/len(loader))
-        writer.add_scalar(f'{exp_name}/loss/train', avg_loss[-1], epoch)
-        logger.info(f'epoch[{epoch+1}/{n_epochs}]\n Current Perfomance:{avg_loss[-1]}\n Best Perfomance:{best_loss}\n')
+        loss_train = total_loss/len(loader)
+        loss_val = evaluate_validation(data_loader_val, model)
+        
+        
+        # write train/val loss to tensorboard
+        writer.add_scalar(f'{exp_name}/loss/train', loss_train, epoch)
+        writer.add_scalar(f'{exp_name}/loss/val', loss_val, epoch)
+        
+        logger.info(f'epoch[{epoch+1}/{n_epochs}]\n Validation Perfomance:{loss_val}\n Current Perfomance:{loss_train}\n Best Perfomance:{best_loss}\n')
 
         # early stopping
-        current_loss = avg_loss[-1]
+        current_loss = loss_train
         best_loss, stop_counter, stop = early_stop(model, 
                                                    best_loss, 
                                                    current_loss, 
@@ -200,6 +205,8 @@ def train_model(data_loader_train, lr, weight_decay, n_epochs, n_feats_t, n_feat
             
         for k,v in all_activations.items():
             writer.add_histogram(f'activations {k}', v, epoch)
+            
+        avg_loss.append(loss_train)
 
     avg_loss = np.array(avg_loss)
     
@@ -258,6 +265,10 @@ if __name__ == '__main__':
     parser.add_argument('--text_feats_path', default = 'feats/text/msrvtt_captions_universal_trainval.pkl')
     parser.add_argument('--trainval_split_path', default = 'TrainVal_videoid_sentid.txt')    
     parser.add_argument('--output_path', default = '/usr/local/extstore01/zahra/VTR_OOD/output_msrvtt')
+
+    parser.add_argument('--video_feats_dir_val', default = 'feats/video/r2plus1d_Test')
+    parser.add_argument('--text_feats_path_val', default = 'feats/text/msrvtt_captions_universal_test.pkl')
+    parser.add_argument('--trainval_split_path_val', default = 'Test_videoid_sentid.txt')
     
     parser.add_argument('--projector', default='1024-1024-1024', type=str, help='projector MLP')
     parser.add_argument('--lambd', default=0.0051, type=float, help='weight on off-diagonal terms')
@@ -298,6 +309,10 @@ if __name__ == '__main__':
     output_path = args.output_path
     v_feats_dir = f'{repo_dir}/{args.video_feats_dir}'
     t_feats_path = f'{repo_dir}/{args.text_feats_path}'
+
+    trainval_split_path_val = f'{repo_dir}/{args.trainval_split_path_val}'
+    v_feats_dir_val = f'{repo_dir}/{args.video_feats_dir_val}'
+    t_feats_path_val = f'{repo_dir}/{args.text_feats_path_val}'
     
     ## bayes opt
     bayes_init_points = args.bayes_init_points
