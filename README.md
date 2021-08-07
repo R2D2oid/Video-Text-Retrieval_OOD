@@ -32,11 +32,12 @@ python -W ignore train_msrvtt.py \
 
 #### Test video-text performance on MSRVTT
 
-'''
+```
 python test_metrics_msrvtt.py \
     --batch-size 128 \
     --exp-name experiment_loss_cross_correlation_lr_9.5e-05_wdecay_0.007323_bsz_128_1628109801
-'''
+```
+
 ### Train video-text retrieval model 
 It initilaizes the vtr model using the video and text encoder weights from the SSL training. It loads the previously generated models at `output/experiments/<exp_name>/model_v2r.sd` and `output/experiments/<exp_name>/model_t2r.sd`
 
